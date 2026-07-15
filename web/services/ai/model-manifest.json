@@ -1,0 +1,12 @@
+{
+  "id": "sentence-transformers-all-MiniLM-L6-v2",
+  "source": "sentence-transformers/all-MiniLM-L6-v2",
+  "capability": "TEXT_EMBEDDING",
+  "language": "en",
+  "dimensions": 384,
+  "license": "Apache-2.0",
+  "status": "DEVELOPMENT_ONLY",
+  "evaluationStatus": "DEFERRED_UNTIL_FINAL_PHASE_5_GATE",
+  "primaryArtifact": "models/all-MiniLM-L6-v2/model.safetensors",
+  "primaryArtifactSha256": "1377e9af0ca0b016a9f2aa584d6fc71ab3ea6804fae21ef9fb1416e2944057ac"
+}

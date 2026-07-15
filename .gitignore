@@ -1,0 +1,48 @@
+# Environment variables and local secrets
+**/.env
+**/.env.*
+!**/.env.example
+
+# JavaScript dependencies and build output
+**/node_modules/
+**/.next/
+**/out/
+**/coverage/
+*.log
+
+# Local databases and transient database files
+**/*.db
+**/*.db-*
+**/*.db-journal
+**/*.sqlite
+**/*.sqlite3
+
+# Private report and upload storage
+**/storage/reports/
+**/uploads/
+
+# Downloaded AI models and caches
+**/services/ai/models/
+**/services/ai/.hf-cache/
+**/.cache/
+**/*.safetensors
+**/*.onnx
+**/*.pt
+**/*.pth
+**/*.h5
+
+# Python environments and caches
+**/.venv/
+**/venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.py[cod]
+
+# Local editor, agent, and operating-system metadata
+.agents/
+.codex/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+

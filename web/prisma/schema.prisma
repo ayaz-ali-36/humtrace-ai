@@ -1,0 +1,270 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String           @id @default(cuid())
+  name               String
+  email              String           @unique
+  phone              String?
+  passwordHash       String?
+  role               String           @default("REPORTER")
+  status             String           @default("ACTIVE")
+  region             String?
+  preferredContactMethod String        @default("EMAIL")
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  reports            Report[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  sessions           Session[]
+  updatedSettings     SystemSetting[]
+  sentRequests       ContactRequest[] @relation("ContactRequestRequester")
+  receivedRequests   ContactRequest[] @relation("ContactRequestRecipient")
+}
+
+model Session {
+  id             String   @id @default(cuid())
+  tokenHash      String   @unique
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Report {
+  id                     String               @id @default(cuid())
+  publicId               String               @unique
+  type                   String
+  reporterId             String
+  reporter               User                 @relation(fields: [reporterId], references: [id])
+  fullName               String?
+  nameUnknown            Boolean              @default(false)
+  approximateAge         String
+  gender                 String?
+  heightCm               Int?
+  weightKg               Int?
+  broadRegion            String
+  specificLocation       String?
+  lastSeenLocation       String?
+  foundLocation          String?
+  eventDate              DateTime?
+  description            String
+  clothing               String?
+  identifyingFeatures    String?
+  medicalCondition       String?
+  reporterRelationship   String?
+  reporterContext        String?
+  relationshipContext    String?
+  preferredContactMethod String               @default("EMAIL")
+  publicVisible          Boolean              @default(false)
+  lifecycleStatus        String               @default("ACTIVE")
+  status                 String               @default("SUBMITTED")
+  visibility             String               @default("LIMITED")
+  consentToContact       Boolean              @default(false)
+  aiProcessingAllowed    Boolean              @default(false)
+  aiProcessingPolicyVersion String?
+  aiProcessingAllowedAt  DateTime?
+  aiProcessingWithdrawnAt DateTime?
+  photoRequirementNote   String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  photos                 ReportPhoto[]
+  sourceRecommendations  Recommendation[]     @relation("SourceReport")
+  targetRecommendations  Recommendation[]     @relation("TargetReport")
+  requesterRequests      ContactRequest[]     @relation("RequesterReport")
+  targetRequests         ContactRequest[]     @relation("TargetReport")
+  timelineEvents         TimelineEvent[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+  textEmbeddings         ReportTextEmbedding[]
+  aiProcessingJobs       AIProcessingJob[]
+
+  @@index([type])
+  @@index([status])
+  @@index([visibility])
+  @@index([broadRegion])
+}
+
+model ReportPhoto {
+  id                String            @id @default(cuid())
+  reportId          String
+  report            Report            @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  kind              String             @default("PRIMARY")
+  fileName          String
+  storagePath       String
+  mimeType          String
+  fileSizeBytes     Int?
+  reviewStatus      String            @default("PENDING")
+  faceCheckStatus   String            @default("NOT_RUN")
+  createdAt         DateTime          @default(now())
+
+  @@index([reportId])
+}
+
+model Recommendation {
+  id                 String               @id @default(cuid())
+  sourceReportId     String
+  targetReportId     String
+  sourceReport       Report               @relation("SourceReport", fields: [sourceReportId], references: [id])
+  targetReport       Report               @relation("TargetReport", fields: [targetReportId], references: [id])
+  score              Int
+  qualityLabel       String
+  sharedAttributes   String
+  breakdownSummary   String
+  status             String               @default("PENDING_REVIEW")
+  textModelVersion   String?
+  scoringVersion     String?
+  expiresAt          DateTime?
+  invalidatedAt      DateTime?
+  invalidationReason String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@unique([sourceReportId, targetReportId])
+  @@index([status])
+}
+
+model ContactRequest {
+  id                String               @id @default(cuid())
+  requesterId       String
+  recipientId       String
+  requester         User                 @relation("ContactRequestRequester", fields: [requesterId], references: [id])
+  recipient         User                 @relation("ContactRequestRecipient", fields: [recipientId], references: [id])
+  requesterReportId String?
+  targetReportId    String?
+  requesterReport   Report?              @relation("RequesterReport", fields: [requesterReportId], references: [id])
+  targetReport      Report?              @relation("TargetReport", fields: [targetReportId], references: [id])
+  message           String
+  status            String               @default("PENDING")
+  activeKey         String?              @unique
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([requesterId])
+  @@index([recipientId])
+  @@index([status])
+}
+
+model TimelineEvent {
+  id          String   @id @default(cuid())
+  reportId    String
+  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  eventDate   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([reportId])
+}
+
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reportId  String?
+  report    Report?            @relation(fields: [reportId], references: [id])
+  title     String
+  message   String
+  status    String             @default("UNREAD")
+  createdAt DateTime           @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  reportId   String?
+  report     Report?  @relation(fields: [reportId], references: [id])
+  action     String
+  resource   String
+  status     String
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([reportId])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([updatedById])
+}
+
+model AIModel {
+  id             String                @id
+  capability     String
+  name           String
+  version        String
+  artifactHash   String                @unique
+  license        String
+  language       String
+  dimensions     Int
+  status         String                @default("DEVELOPMENT_ONLY")
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  embeddings     ReportTextEmbedding[]
+  jobs           AIProcessingJob[]
+
+  @@index([capability])
+  @@index([status])
+}
+
+model ReportTextEmbedding {
+  id            String    @id @default(cuid())
+  reportId      String
+  report        Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  modelId       String
+  model         AIModel   @relation(fields: [modelId], references: [id])
+  ciphertext    Bytes
+  iv            Bytes
+  authTag       Bytes
+  dimensions    Int
+  inputHash     String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  expiresAt     DateTime?
+  invalidatedAt DateTime?
+
+  @@unique([reportId, modelId])
+  @@index([modelId])
+  @@index([expiresAt])
+}
+
+model AIProcessingJob {
+  id            String    @id @default(cuid())
+  reportId      String
+  report        Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  modelId       String
+  model         AIModel   @relation(fields: [modelId], references: [id])
+  jobType       String
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  safeErrorCode String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([reportId])
+  @@index([modelId])
+  @@index([status])
+}

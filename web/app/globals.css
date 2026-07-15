@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --navy: #1A1A2E;
+  --navy-2: #16213E;
+  --navy-3: #0D1B2A;
+  --red: #E94560;
+  --red-dark: #C73652;
+  --white: #FFFFFF;
+  --gray-400: #9AA0A6;
+  --success: #27AE60;
+  --warning: #F39C12;
+  --danger: #E74C3C;
+  --background: var(--navy);
+  --surface-deep: var(--navy-3);
+  --surface: var(--navy-2);
+  --surface-elevated: #1d2948;
+  --surface-high: #243253;
+  --text-primary: var(--white);
+  --text-muted: var(--gray-400);
+  --accent: var(--red);
+  --accent-soft: rgba(233, 69, 96, 0.14);
+  --border: rgba(255, 255, 255, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(rgba(233, 69, 96, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(233, 69, 96, 0.018) 1px, transparent 1px),
+    var(--background);
+  background-size: 32px 32px;
+  color: var(--text-primary);
+  font-family: var(--font-body), "DM Sans", system-ui, sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  outline-color: var(--accent);
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: white;
+}
+
+.surface-border {
+  border: 1px solid var(--border);
+}
+
+.stitch-panel {
+  border: 1px solid var(--border);
+  background: rgba(16, 32, 52, 0.78);
+  box-shadow: inset 0 1px 0 rgba(211, 228, 254, 0.04);
+}
+
+.stitch-label {
+  color: var(--accent);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.stitch-title {
+  color: #e7f0ff;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.stitch-rule {
+  border-top: 1px solid var(--border);
+}
+
+.noise {
+  background-image:
+    radial-gradient(circle at center, rgba(233, 69, 96, 0.1) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 28px 28px, 56px 56px, 56px 56px;
+}
+
+.mobile-data-cards {
+  display: none;
+}
+
+.desktop-data-table {
+  display: block;
+}
+
+@media (max-width: 767px) {
+  .mobile-data-cards {
+    display: grid;
+  }
+
+  .desktop-data-table {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

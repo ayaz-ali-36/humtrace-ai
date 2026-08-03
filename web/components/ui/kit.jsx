@@ -10,7 +10,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   AlertCircle,
   Archive,
-  Bell,
   Check,
   ChevronRight,
   Eye,
@@ -19,9 +18,9 @@ import {
   Home,
   Lock,
   LogOut,
+  LoaderCircle,
   Menu,
   Search,
-  Send,
   Shield,
   SlidersHorizontal,
   Upload,
@@ -44,31 +43,102 @@ import {
 import { adminRoutes, publicRoutes, reporterRoutes } from "@/lib/routes";
 import { privacyNotice, regions } from "@/lib/constants";
 import {
-  auditLogs,
   chartReportsByCity,
   chartReportsByMonth,
   connectionRequests,
-  notifications,
-  reports,
-  users
+  reports
 } from "@/data/mock-data";
 import { clampScore, cn } from "@/lib/utils";
 
 const inputClass =
-  "w-full rounded-sm border border-[var(--border)] bg-deep px-4 py-4 text-sm text-primary placeholder:text-muted focus:border-accent";
+  "w-full rounded-sm border border-[var(--border)] bg-deep px-4 py-3 text-sm text-primary placeholder:text-muted focus:border-accent";
 const buttonClass =
-  "inline-flex min-h-11 items-center justify-center gap-2 rounded-sm px-5 py-2 font-mono text-xs font-bold uppercase tracking-[0.16em] transition focus-visible:ring-2 focus-visible:ring-accent";
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-sm px-5 py-2.5 text-sm font-semibold transition focus-visible:ring-2 focus-visible:ring-accent";
+
+async function requestJson(url, options = {}, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const text = await response.text();
+    let result = {};
+    if (text) {
+      try { result = JSON.parse(text); }
+      catch { throw new Error("The server returned an unreadable response. Please retry."); }
+    }
+    if (!response.ok) {
+      const error = new Error(result.error || (response.status >= 500 ? "The service is temporarily unavailable. Please retry." : "The request could not be completed."));
+      error.status = response.status;
+      throw error;
+    }
+    return result;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("This request took too long. Check the service and retry.");
+    if (error instanceof TypeError) throw new Error("Unable to reach HumTrace. Check your connection and retry.");
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function PendingLabel({ children }) {
+  return <><LoaderCircle className="animate-spin" size={16} aria-hidden="true" />{children}</>;
+}
+
+function RequiredMark() {
+  return <><span className="ml-1 text-accent" aria-hidden="true">*</span><span className="sr-only"> (required)</span></>;
+}
 
 function LogoText({ className = "text-xl" }) {
   return (
-    <span className={`block font-display ${className} font-extrabold uppercase tracking-normal text-white`}>
-      HumTrace <span className="text-accent">AI</span>
+    <span className={`block font-display ${className} font-bold tracking-tight text-primary`}>
+      HumTrace <span className="font-medium text-accent">AI</span>
     </span>
   );
 }
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const [authState, setAuthState] = useState({ checked: false, user: null });
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountMenuRef = useRef(null);
+  useEffect(() => {
+    let active = true;
+    requestJson("/api/auth/me", {}, 10000)
+      .then((result) => { if (active) setAuthState({ checked: true, user: result.user || null }); })
+      .catch(() => { if (active) setAuthState({ checked: true, user: null }); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!accountOpen) return undefined;
+    const closeAccountMenu = (event) => {
+      if (event.type === "keydown" && event.key !== "Escape") return;
+      if (event.type === "pointerdown" && accountMenuRef.current?.contains(event.target)) return;
+      setAccountOpen(false);
+    };
+    document.addEventListener("pointerdown", closeAccountMenu);
+    window.addEventListener("keydown", closeAccountMenu);
+    return () => {
+      document.removeEventListener("pointerdown", closeAccountMenu);
+      window.removeEventListener("keydown", closeAccountMenu);
+    };
+  }, [accountOpen]);
+  const dashboardHref = authState.user?.role === "ADMIN" ? "/admin/dashboard" : "/reporter/dashboard";
+  const logout = async () => {
+    setLogoutPending(true);
+    setLogoutError("");
+    try {
+      const result = await requestJson("/api/auth/logout", { method: "POST" });
+      window.location.href = result.redirectTo || "/";
+    } catch (error) {
+      setLogoutError(error.message);
+      setLogoutPending(false);
+    }
+  };
+  const firstName = authState.user?.name?.trim().split(/\s+/)[0] || "Account";
+  const dashboardLabel = authState.user?.role === "ADMIN" ? "Admin Dashboard" : "My Dashboard";
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-deep/98 backdrop-blur">
       <div className="mx-auto flex max-w-[1500px] items-center justify-between px-5 py-0 sm:px-8">
@@ -76,10 +146,7 @@ export function Navbar() {
           <span className="grid h-9 w-9 place-items-center rounded-sm bg-[var(--accent-soft)] text-accent">
             <Shield size={22} aria-hidden="true" />
           </span>
-          <span>
-            <LogoText />
-            <span className="hidden font-mono text-[0.62rem] uppercase tracking-[0.16em] text-accent sm:block">Privacy-first reporting</span>
-          </span>
+          <LogoText />
         </Link>
         <nav className="hidden items-center gap-1 lg:flex" aria-label="Public navigation">
           {publicRoutes.map((route) => (
@@ -87,18 +154,40 @@ export function Navbar() {
               {route.label}
             </Link>
           ))}
-          <Link href="/login" className={`${buttonClass} border border-[var(--border)] text-primary`}>
-            Sign In
-          </Link>
-          <Link href="/register" className={`${buttonClass} bg-accent text-deep`}>
-            Register
-          </Link>
+          {!authState.checked ? <span className="h-11 w-40 animate-pulse rounded-sm bg-surface" aria-label="Checking sign-in status" /> : authState.user ? (
+            <div className="ml-2 flex items-center gap-2">
+              <Link href={dashboardHref} className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`}>{dashboardLabel}</Link>
+              <div className="relative" ref={accountMenuRef}>
+                <button className="grid h-11 w-11 place-items-center rounded-full border border-[var(--border)] bg-[var(--accent-soft)] text-sm font-bold text-accent hover:border-accent" onClick={() => setAccountOpen((current) => !current)} aria-label="Open account menu" aria-haspopup="menu" aria-expanded={accountOpen} title="Account menu">
+                  {firstName.slice(0, 1).toUpperCase()}
+                </button>
+                {accountOpen ? (
+                  <div className="absolute right-0 top-[calc(100%+0.65rem)] w-60 overflow-hidden rounded-sm border border-[var(--border)] bg-elevated shadow-2xl" role="menu">
+                    <div className="border-b border-[var(--border)] px-4 py-4">
+                      <p className="text-xs text-muted">Signed in as</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-primary">{authState.user.name}</p>
+                    </div>
+                    <div className="p-2">
+                      <button className="flex min-h-11 w-full items-center gap-3 rounded-sm px-3 text-left text-sm font-semibold text-primary hover:bg-deep" onClick={logout} disabled={logoutPending} role="menuitem">
+                        {logoutPending ? <PendingLabel>Signing out</PendingLabel> : <><LogOut size={17} aria-hidden="true" />Sign out</>}
+                      </button>
+                    </div>
+                    {logoutError ? <p className="px-4 pb-3 text-sm text-[var(--danger)]" role="alert">{logoutError}</p> : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : <>
+            <Link href="/login" className={`${buttonClass} border border-[var(--border)] text-primary`}>Sign In</Link>
+            <Link href="/register" className={`${buttonClass} bg-accent text-white`}>Create account</Link>
+          </>}
         </nav>
         <button className="my-2 grid h-11 w-11 place-items-center rounded-sm border border-[var(--border)] lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation">
           <Menu size={22} />
         </button>
       </div>
-      {open ? <MobileDrawer title="HumTrace AI" onClose={() => setOpen(false)} routes={[...publicRoutes, { href: "/login", label: "Login" }, { href: "/register", label: "Register" }]} /> : null}
+      {open ? <MobileDrawer title={authState.user ? `Signed in as ${authState.user.name}` : "HumTrace AI"} onClose={() => setOpen(false)} routes={authState.user ? [...publicRoutes, { href: dashboardHref, label: dashboardLabel }] : [...publicRoutes, { href: "/login", label: "Sign in" }, { href: "/register", label: "Create account" }]} onLogout={authState.user ? logout : undefined} logoutPending={logoutPending} logoutError={logoutError} /> : null}
+      {logoutError ? <p className="sr-only" role="alert">{logoutError}</p> : null}
     </header>
   );
 }
@@ -106,21 +195,20 @@ export function Navbar() {
 export function Footer() {
   return (
     <footer className="border-t border-[var(--border)] bg-deep">
-      <div className="mx-auto grid max-w-[1500px] gap-8 px-5 py-12 text-sm text-muted sm:px-8 md:grid-cols-[1.4fr_1fr_1fr]">
+      <div className="mx-auto grid max-w-[1500px] gap-8 px-5 py-10 text-sm text-muted sm:px-8 md:grid-cols-[1.4fr_1fr]">
         <div>
-          <p className="font-display text-2xl font-extrabold uppercase text-white">HumTrace <span className="text-accent">AI</span></p>
-          <p className="mt-2 max-w-xl">Phase 4 local demo for privacy-preserving reporting, deterministic possible recommendations, and consent-based contact review in Pakistan.</p>
-          <p className="mt-3 max-w-xl text-xs">AI recommendations assist human decision-making and do not constitute identity confirmation.</p>
-          <p className="mt-3 font-mono text-xs uppercase tracking-[0.14em] text-primary">Rescue: 1122 • Police: 15 • Edhi Foundation: 115 • Chhipa Welfare: 1020</p>
+          <LogoText className="text-2xl" />
+          <p className="mt-2 max-w-xl">A final-year project for reporting missing and unidentified people and reviewing possible matches.</p>
+          <p className="mt-3 text-xs">Possible matches are suggestions, not confirmed identities.</p>
         </div>
-        <div>
-          <p className="font-semibold text-primary">Portals</p>
-          <Link className="mt-2 block min-h-10 py-2 hover:text-white" href="/reporter/dashboard">Reporter Account</Link>
-          <Link className="mt-1 block min-h-10 py-2 hover:text-white" href="/admin/login">Admin Portal</Link>
-        </div>
-        <div>
-          <p className="font-semibold text-primary">Safety</p>
-          <p className="mt-2">AI Does Not Confirm Identity. Human Review Required.</p>
+        <div className="md:text-right">
+          <p className="font-semibold text-primary">Emergency contacts in Pakistan</p>
+          <p className="mt-2">Rescue 1122 · Police 15 · Edhi 115 · Chhipa 1020</p>
+          <div className="mt-3 flex gap-4 md:justify-end">
+            <Link className="hover:text-accent" href="/about">About</Link>
+            <Link className="hover:text-accent" href="/contact">Help</Link>
+            <Link className="hover:text-accent" href="/admin/login">Admin</Link>
+          </div>
         </div>
       </div>
     </footer>
@@ -140,46 +228,32 @@ export function PublicShell({ children }) {
 export function HeroSection() {
   return (
     <section className="noise border-b border-[var(--border)]">
-      <div className="mx-auto grid min-h-[720px] max-w-[1500px] gap-12 px-5 py-16 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:py-24">
+      <div className="mx-auto grid min-h-[590px] max-w-[1500px] gap-12 px-5 py-16 sm:px-8 lg:grid-cols-[1.08fr_0.92fr] lg:py-20">
         <div className="self-center text-center lg:text-left">
-          <DemoDataNotice />
-          <h1 className="stitch-title mx-auto mt-7 max-w-4xl font-display text-4xl uppercase tracking-normal sm:text-6xl lg:mx-0 lg:text-7xl">
-            Finding the Missing.<br />Identifying the Unknown.
+          <p className="text-sm font-semibold text-accent">Missing and unidentified person reports</p>
+          <h1 className="stitch-title mx-auto mt-4 max-w-4xl font-display text-4xl sm:text-6xl lg:mx-0 lg:text-7xl">
+            Share a report.<br />Review possible matches.
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted lg:mx-0">
-            Privacy-preserving reporting and deterministic similarity suggestions connecting missing-person reports with public unidentified-person records across Pakistan.
+            Add the details you know, compare them with other reports, and request contact when something looks relevant.
           </p>
-          <div className="mt-10 flex flex-col justify-center gap-4 sm:flex-row lg:justify-start">
-            <Link href="/search" className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`}><Search size={16} /> Smart Search</Link>
-            <Link href="/report/missing" className={`${buttonClass} border border-[var(--border)] text-primary`}>Report Missing Person</Link>
-            <Link href="/report/unidentified" className={`${buttonClass} border border-[var(--border)] text-primary`}>Report Unidentified Person</Link>
+          <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
+            <Link href="/report/missing" className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`}>Report a missing person</Link>
+            <Link href="/report/unidentified" className={`${buttonClass} border border-[var(--border)] bg-deep text-primary hover:border-accent`}>Report an unidentified person</Link>
           </div>
-          <Link href="/browse" className="mt-5 inline-flex min-h-10 items-center gap-2 py-2 text-sm font-semibold text-accent">
-            Search public cases <ChevronRight size={16} />
+          <Link href="/browse" className="mt-4 inline-flex min-h-10 items-center gap-2 py-2 text-sm font-semibold text-accent">
+            Browse reports <ChevronRight size={16} />
           </Link>
         </div>
-        <div className="stitch-panel self-center rounded-sm p-5 shadow-soft">
-          <div className="rounded-sm bg-deep p-6">
-            <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
-              <div>
-                <p className="text-sm text-muted">Deterministic Similarity Scoring</p>
-                <p className="font-mono text-2xl text-white">Phase 4 Preview</p>
-              </div>
-              <StatusBadge status="Human Review Required" />
+        <div className="stitch-panel self-center overflow-hidden rounded-sm p-6 shadow-soft">
+          <div className="rounded-sm bg-[var(--accent-soft)] p-4 sm:p-5">
+            <div className="overflow-hidden rounded-sm border border-[var(--border)] bg-white">
+              <Image src="/images/humtrace-face-scanner-hero.png" alt="Geometric face pattern inside circular comparison rings" width={1536} height={1024} priority className="h-auto w-full object-cover" />
             </div>
-            <div className="mt-5 grid gap-3">
-              {[
-                { label: "Face similarity unavailable", value: 0 },
-                { label: "Age similarity", value: 80 },
-                { label: "Gender similarity", value: 100 },
-                { label: "Location similarity", value: 0 },
-                { label: "Description similarity", value: 20 },
-                { label: "Illustrative overall score", value: 22 }
-              ].map((item) => (
-                <ScoreBar key={item.label} label={item.label} value={item.value} />
-              ))}
+            <div className="mt-5 text-center">
+              <p className="text-lg font-semibold text-primary">Details and facial patterns can highlight a possible match</p>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">You review the similarities and decide whether to request contact.</p>
             </div>
-            <PrivacyNoticeCard className="mt-5" />
           </div>
         </div>
       </div>
@@ -187,13 +261,13 @@ export function HeroSection() {
   );
 }
 
-export function PageHeader({ eyebrow = "HumTrace AI", title, description, action }) {
+export function PageHeader({ eyebrow = "HumTrace", title, description, action }) {
   return (
     <div className="mx-auto max-w-[1500px] px-5 pb-8 pt-10 sm:px-8 lg:pt-12">
       <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="stitch-label">{eyebrow}</p>
-          <h1 className="stitch-title mt-3 font-display text-3xl uppercase sm:text-5xl lg:text-6xl">{title}</h1>
+          <h1 className="stitch-title mt-3 font-display text-3xl sm:text-5xl lg:text-6xl">{title}</h1>
           {description ? <p className="mt-4 max-w-4xl text-lg leading-8 text-muted">{description}</p> : null}
         </div>
         {action}
@@ -205,7 +279,7 @@ export function PageHeader({ eyebrow = "HumTrace AI", title, description, action
 export function SectionHeader({ title, description }) {
   return (
     <div className="mb-5">
-      <h2 className="font-mono text-xl font-bold uppercase tracking-[0.16em] text-white">{title}</h2>
+      <h2 className="font-display text-2xl font-semibold tracking-tight text-primary">{title}</h2>
       {description ? <p className="mt-2 text-sm leading-6 text-muted">{description}</p> : null}
     </div>
   );
@@ -216,8 +290,8 @@ export function DashboardCard({ title, value, icon: Icon = FileText, meta }) {
     <article className="stitch-panel rounded-sm p-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="font-mono text-xs font-bold uppercase tracking-[0.14em] text-muted">{title}</p>
-          {value !== "" ? <p className="mt-4 font-display text-4xl font-extrabold text-white">{value}</p> : null}
+          <p className="text-base font-semibold text-primary">{title}</p>
+          {value !== "" ? <p className="mt-4 font-display text-4xl font-bold text-primary">{value}</p> : null}
         </div>
         <span className="grid h-11 w-11 place-items-center rounded-sm bg-[var(--accent-soft)] text-accent">
           <Icon size={22} />
@@ -232,22 +306,41 @@ export function StatCard(props) {
   return <DashboardCard {...props} />;
 }
 
+function ReportPhoto({ report, className = "", iconSize = 42 }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [report?.photoUrl]);
+  const showPhoto = Boolean(report?.photoUrl && !failed);
+  return (
+    <div className={`relative overflow-hidden bg-[var(--accent-soft)] ${className}`}>
+      {showPhoto ? <>
+        <Image src={report.photoUrl} alt="" fill sizes="(max-width: 768px) 100vw, 40vw" unoptimized aria-hidden="true" className="scale-110 object-cover opacity-30 blur-xl" />
+        <Image src={report.photoUrl} alt={`Photograph for report ${report.id || "case"}`} fill sizes="(max-width: 768px) 100vw, 40vw" unoptimized className="relative z-[1] object-contain object-center" onError={() => setFailed(true)} />
+      </> : (
+        <span className="absolute inset-0 grid place-items-center text-accent">
+          <span className="grid h-16 w-16 place-items-center rounded-full border border-accent/20 bg-deep"><User size={iconSize} aria-hidden="true" /></span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function ReportCard({ report, onViewDetails }) {
   return (
     <article className="stitch-panel overflow-hidden rounded-sm">
-      <div className="flex aspect-[16/8] items-center justify-center border-b border-[var(--border)] bg-[var(--accent-soft)]">
-        <User className="text-accent" size={40} aria-hidden="true" />
+      <div className="relative aspect-[16/9] border-b border-[var(--border)]">
+        <ReportPhoto report={report} className="h-full w-full" iconSize={30} />
+        <span className="absolute left-4 top-4 z-[2] rounded-full bg-background/90 px-3 py-1.5 text-xs font-semibold text-accent shadow-sm backdrop-blur">{report.type}</span>
       </div>
       <div className="p-6">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-accent">{report.id}</span>
           <StatusBadge status={report.status} />
         </div>
-        <h3 className="mt-4 font-display text-2xl font-extrabold uppercase text-white">{report.name || (report.type === "Missing Person" ? "Ali Khan" : "Unknown Person")}</h3>
-        <p className="mt-2 text-sm text-muted">{report.description}</p>
+        <h3 className="mt-4 font-display text-2xl font-semibold text-primary">{report.name || (report.type === "Missing Person" ? "Name not publicly available" : "Unknown Person")}</h3>
+        <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted">{report.description}</p>
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <Info label="Case ID" value={report.id.replace("HT-M", "MP").replace("HT-U", "UI")} />
-          <Info label="Age / Gender" value={`${report.age} • ${report.gender || "Not specified"}`} />
+          <Info label="Age / Gender" value={`${report.age} · ${report.gender || "Not specified"}`} />
           <Info label="Location" value={report.region} />
           <Info label="Case type" value={report.type === "Missing Person" ? "Missing" : "Unidentified"} />
         </dl>
@@ -262,6 +355,8 @@ function ReportDetailsModal({ report, onClose }) {
   const [requestOpen, setRequestOpen] = useState(false);
   const [requestMessage, setRequestMessage] = useState("");
   const [requestError, setRequestError] = useState("");
+  const [requestPending, setRequestPending] = useState(false);
+  const [humanReviewAcknowledged, setHumanReviewAcknowledged] = useState(false);
   const [authState, setAuthState] = useState({ checked: false, user: null });
 
   useEffect(() => {
@@ -270,11 +365,12 @@ function ReportDetailsModal({ report, onClose }) {
     setRequestOpen(false);
     setRequestMessage("");
     setRequestError("");
+    setRequestPending(false);
+    setHumanReviewAcknowledged(false);
     setAuthState({ checked: false, user: null });
     if (!report) return () => { active = false; };
 
-    fetch("/api/auth/me")
-      .then((response) => response.json())
+    requestJson("/api/auth/me", {}, 10000)
       .then((result) => {
         if (active) setAuthState({ checked: true, user: result.user || null });
       })
@@ -291,32 +387,29 @@ function ReportDetailsModal({ report, onClose }) {
   const submitRequest = async (event) => {
     event.preventDefault();
     setRequestError("");
-    const response = await fetch("/api/contact-requests", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        reportId: publicCaseId,
-        message: requestMessage
-      })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (response.ok) {
+    setRequestPending(true);
+    try {
+      await requestJson("/api/contact-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId: publicCaseId, message: requestMessage, humanReviewAcknowledged })
+      });
       setRequestSent(true);
       setRequestOpen(false);
-      return;
+    } catch (error) {
+      setRequestError(error.message);
+    } finally {
+      setRequestPending(false);
     }
-    setRequestError(result.error || "Unable to send the contact request.");
   };
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 py-6">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="report-details-title">
       <section className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-sm border border-[var(--border)] bg-background shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] p-5">
           <div>
             <p className="stitch-label">{publicCaseId}</p>
-            <h2 className="mt-2 font-display text-3xl font-extrabold uppercase text-white">{report.name || "Unknown Person"}</h2>
-            <p className="mt-2 text-sm text-muted">Limited public details only. Private notes and contact information are hidden.</p>
+            <h2 id="report-details-title" className="mt-2 font-display text-3xl font-semibold text-primary">{report.name || "Unknown Person"}</h2>
+            <p className="mt-2 text-sm text-muted">{report.photoUrl ? "Public report details are shown for this local presentation." : "Private notes, photographs and contact information are hidden."}</p>
           </div>
           <button className="grid h-11 w-11 shrink-0 place-items-center rounded-sm border border-[var(--border)] text-primary hover:bg-surface" onClick={onClose} aria-label="Close details">
             <X size={18} />
@@ -324,10 +417,8 @@ function ReportDetailsModal({ report, onClose }) {
         </div>
         <div className="grid gap-5 p-5 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="rounded-sm border border-[var(--border)] bg-deep p-5">
-            <div className="flex aspect-[16/11] items-center justify-center rounded-sm bg-[var(--accent-soft)]">
-              <User className="text-accent" size={56} aria-hidden="true" />
-            </div>
-            <p className="mt-4 text-xs leading-6 text-muted">Public photo placeholder. Stored report images are private local files and face/person validation belongs to a later computer-vision phase.</p>
+            <ReportPhoto report={report} className="aspect-[4/3] w-full rounded-sm" iconSize={56} />
+            <p className="mt-4 text-xs leading-6 text-muted">{report.photoUrl ? "Local presentation photo. Disable demo photo visibility before deployment." : "No public photograph is available for this report."}</p>
           </div>
           <div className="grid gap-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -351,8 +442,8 @@ function ReportDetailsModal({ report, onClose }) {
             ) : null}
             {requestError ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary">{requestError}</div> : null}
             <div className="flex flex-col gap-3 sm:flex-row">
-              {!authState.checked ? <button className={`${buttonClass} bg-accent text-white opacity-70`} disabled>Checking Sign-In</button> : canRequestContact ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={() => setRequestOpen(true)}>Request Contact</button> : <Link className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} href="/login?returnTo=/browse">Sign In to Request Contact</Link>}
-              <Link href="/track" className={`${buttonClass} border border-[var(--border)] text-primary`}>Track This Case</Link>
+              {!authState.checked ? <button className={`${buttonClass} bg-accent text-white opacity-70`} disabled><PendingLabel>Checking Sign-In</PendingLabel></button> : canRequestContact ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={() => setRequestOpen(true)}>Request Contact</button> : <Link className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} href={`/login?returnTo=${encodeURIComponent(`/browse?caseId=${publicCaseId}`)}`}>Sign In to Request Contact</Link>}
+              <Link href={`/track?caseId=${encodeURIComponent(publicCaseId)}`} className={`${buttonClass} border border-[var(--border)] text-primary`}>Track This Case</Link>
               <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={onClose}>Back to Results</button>
             </div>
           </div>
@@ -361,19 +452,20 @@ function ReportDetailsModal({ report, onClose }) {
           <div className="border-t border-[var(--border)] bg-deep p-5">
             <form className="grid gap-4" onSubmit={submitRequest}>
               <div>
-                <p className="font-display text-xl font-extrabold uppercase text-white">Request reporter contact</p>
+                <p className="font-display text-xl font-semibold text-primary">Request contact</p>
                 <p className="mt-2 text-sm leading-6 text-muted">Write a short reason. The request is saved for reporter review, and contact remains hidden until acceptance.</p>
               </div>
               <label>
                 <span className="mb-2 block text-sm font-semibold text-primary">Reason for contact</span>
-                <textarea className={`${inputClass} min-h-28`} value={requestMessage} onChange={(event) => setRequestMessage(event.target.value)} required placeholder="Example: I think this may be my missing brother because..." />
-              </label>
+                 <textarea className={`${inputClass} min-h-28`} value={requestMessage} onChange={(event) => setRequestMessage(event.target.value)} required minLength={10} placeholder="Explain why these public details may be relevant to your report." />
+               </label>
+              <label className="flex items-start gap-3 text-sm text-muted"><input className="mt-1 h-5 w-5 accent-[var(--accent)]" type="checkbox" checked={humanReviewAcknowledged} onChange={(event) => setHumanReviewAcknowledged(event.target.checked)} required /><span>I reviewed this as a possible connection only. I understand it may be wrong and does not confirm identity.</span></label>
               <div className="rounded-sm border border-[var(--border)] bg-background p-4 text-sm text-muted">
-                This does not reveal your phone/email and does not reveal the reporter contact. Contact sharing happens only after approval.
+                 This does not reveal either reporter&apos;s contact details. Contact sharing happens only after the recipient accepts.
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
-                <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit">Send Request</button>
-                <button className={`${buttonClass} border border-[var(--border)] text-primary`} type="button" onClick={() => setRequestOpen(false)}>Cancel</button>
+                 <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit" disabled={requestPending}>{requestPending ? <PendingLabel>Sending</PendingLabel> : "Send Request"}</button>
+                 <button className={`${buttonClass} border border-[var(--border)] text-primary`} type="button" onClick={() => setRequestOpen(false)} disabled={requestPending}>Cancel</button>
               </div>
             </form>
           </div>
@@ -383,20 +475,13 @@ function ReportDetailsModal({ report, onClose }) {
   );
 }
 
-function ConfidenceBadge({ score }) {
-  const value = Number(score) || 0;
-  const tone = value >= 85 ? "bg-[var(--success)] text-white" : value >= 70 ? "bg-[var(--warning)] text-deep" : "bg-[var(--danger)] text-white";
-  const label = value >= 85 ? "High Confidence" : value >= 70 ? "Possible Match" : "Low Confidence";
-  return <span className={`inline-flex rounded-full px-3 py-1 font-mono text-xs font-bold uppercase tracking-[0.12em] ${tone}`}>{value}% {label}</span>;
-}
-
 export function RecommendationCard({ item }) {
   const [hidden, setHidden] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [requestMessage, setRequestMessage] = useState("");
   if (hidden) {
-    return <EmptyState title="Potential match hidden" description="This UI-only action does not save changes." />;
+    return <EmptyState title="Match hidden" description="This item has been removed from your current view." />;
   }
   const submitRequest = async (event) => {
     event.preventDefault();
@@ -420,10 +505,10 @@ export function RecommendationCard({ item }) {
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="stitch-label">{item.reportId} • Related Case {item.similarReportId}</p>
-          <h3 className="mt-3 font-display text-3xl font-extrabold uppercase text-white">Possible Recommendation</h3>
-          <p className="mt-2 text-sm text-muted">AI suggestion only — human verification required. A score is not proof of identity.</p>
+          <h3 className="mt-3 font-display text-3xl font-semibold text-primary">Possible match</h3>
+          <p className="mt-2 text-sm text-muted">This score is a suggestion, not proof of identity.</p>
         </div>
-        <ScorePill score={item.score} label={item.textEmbeddingUsed ? "Development Score" : "Overall Score"} />
+        <ScorePill score={item.score} label="Match score" />
       </div>
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr]">
         <ScoreBreakdown items={item.breakdown} />
@@ -445,8 +530,8 @@ export function RecommendationCard({ item }) {
       {requestOpen ? (
         <form className="mt-5 grid gap-4 rounded-sm border border-[var(--border)] bg-deep p-5" onSubmit={submitRequest}>
           <div>
-            <p className="font-semibold text-white">Request contact for this potential match</p>
-            <p className="mt-2 text-sm text-muted">Explain why you believe this match should be reviewed. Contact details remain hidden until approval.</p>
+            <p className="font-semibold text-white">Request contact for this possible recommendation</p>
+            <p className="mt-2 text-sm text-muted">Explain why this possible recommendation should be reviewed. Contact details remain hidden until recipient acceptance.</p>
           </div>
           <label>
             <span className="mb-2 block text-sm font-semibold text-primary">Reason for contact</span>
@@ -472,47 +557,59 @@ export function ScoreBreakdown({ items }) {
     <div className="rounded-sm border border-[var(--border)] bg-deep p-5">
       <p className="font-semibold text-white">Score Breakdown</p>
       <div className="mt-4 grid gap-3">
-        {items.map((item) => <ScoreBar key={item.label} label={item.label} value={item.value} />)}
+        {(Array.isArray(items) ? items : []).map((item) => item.available === false
+          ? <div key={item.label} className="flex items-center justify-between gap-3 text-sm"><span className="text-muted">{item.label}</span><span className="font-mono text-xs uppercase text-muted">Unavailable</span></div>
+          : <ScoreBar key={item.label} label={item.label} value={item.value} />)}
       </div>
     </div>
   );
 }
 
-function Phase4RecommendationCard({ item, canManage = false }) {
+function RecommendationReviewCard({ item, canManage = false, onRemoved }) {
   const [hidden, setHidden] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [requestMessage, setRequestMessage] = useState("");
+  const [humanReviewAcknowledged, setHumanReviewAcknowledged] = useState(false);
   const [status, setStatus] = useState(item.status || "New");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [pendingAction, setPendingAction] = useState("");
 
   if (hidden) {
-    return <EmptyState title="Recommendation hidden" description="This possible recommendation was dismissed from your current view." />;
+    return <EmptyState title="Match dismissed" description="This item has been removed from your current view." />;
   }
 
   const updateRecommendation = async (action, body = {}) => {
     setError("");
+    setNotice("");
     if (!canManage || !item.id) {
       setError("Please sign in to manage recommendations or request contact.");
       return null;
     }
-    const response = await fetch(`/api/recommendations/${item.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...body })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(result.error || "Unable to update recommendation.");
+    if (pendingAction) return null;
+    setPendingAction(action);
+    try {
+      const result = await requestJson(`/api/recommendations/${item.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...body })
+      });
+      setStatus(result.status === "CONTACT_REQUESTED" ? "Contact Requested" : result.status === "DISMISSED" ? "Dismissed" : result.status === "VIEWED" ? "Viewed" : status);
+      if (action === "view") setNotice("Recommendation marked as viewed.");
+      if (action === "flag") setNotice("Quality concern recorded for operational review.");
+      return result;
+    } catch (requestError) {
+      setError(requestError.message);
       return null;
+    } finally {
+      setPendingAction("");
     }
-    setStatus(result.status === "CONTACT_REQUESTED" ? "Contact Requested" : result.status === "DISMISSED" ? "Dismissed" : result.status === "VIEWED" ? "Viewed" : status);
-    return result;
   };
 
   const submitRequest = async (event) => {
     event.preventDefault();
-    const result = await updateRecommendation("request_contact", { message: requestMessage });
+    const result = await updateRecommendation("request_contact", { message: requestMessage, humanReviewAcknowledged });
     if (result) {
       setRequestSent(true);
       setRequestOpen(false);
@@ -521,7 +618,7 @@ function Phase4RecommendationCard({ item, canManage = false }) {
 
   const dismiss = async () => {
     const result = canManage ? await updateRecommendation("dismiss") : {};
-    if (result || !canManage) setHidden(true);
+    if (result || !canManage) { setHidden(true); onRemoved?.(item.id || item.similarReportId); }
   };
 
   return (
@@ -529,18 +626,19 @@ function Phase4RecommendationCard({ item, canManage = false }) {
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="stitch-label">{item.reportId} / Related Case {item.similarReportId}</p>
-          <h3 className="mt-3 font-display text-3xl font-extrabold uppercase text-white">Possible Recommendation</h3>
-          <p className="mt-2 text-sm text-muted">AI-assisted suggestion only. Human review required. This does not confirm identity.</p>
+          <h3 className="mt-3 font-display text-3xl font-semibold text-primary">Possible match</h3>
+          <p className="mt-2 text-sm text-muted">Review the details carefully. A score does not confirm identity.</p>
         </div>
-        <ScorePill score={item.score} label="Overall Score" />
+        <ScorePill score={item.score} label="Match score" />
       </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr]">
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <ReportPhoto report={{ ...item.targetReport, id: item.similarReportId }} className="aspect-[4/3] w-full rounded-sm border border-[var(--border)]" iconSize={48} />
         <ScoreBreakdown items={item.breakdown || []} />
         <div className="rounded-sm border border-[var(--border)] bg-deep p-5">
-          <p className="font-semibold text-white">Recommendation Details</p>
+          <p className="font-semibold text-primary">Details in common</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {(item.attributes || []).map((attribute) => (
-              <span key={attribute} className="rounded-sm bg-[var(--accent-soft)] px-3 py-2 font-mono text-xs uppercase tracking-[0.12em] text-accent">{attribute}</span>
+              <span key={attribute} className="rounded-full bg-[var(--accent-soft)] px-3 py-2 text-xs font-semibold text-accent">{attribute}</span>
             ))}
           </div>
           <p className="mt-4 text-sm leading-6 text-muted">{item.explanation || "Score uses available report details. Face similarity is not available in this phase."}</p>
@@ -553,25 +651,26 @@ function Phase4RecommendationCard({ item, canManage = false }) {
         </div>
       </div>
       {error ? <div className="mt-5 rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary">{error}</div> : null}
+      {notice ? <div className="mt-5 rounded-sm border border-[var(--success)]/40 bg-[var(--success)]/10 p-4 text-sm text-primary" role="status">{notice}</div> : null}
       {requestSent ? <div className="mt-5 rounded-sm border border-[var(--success)]/40 bg-[var(--success)]/10 p-4 text-sm text-primary"><strong className="text-white">Contact request sent.</strong> Contact details remain hidden until the recipient accepts.</div> : null}
       {requestOpen ? (
         <form className="mt-5 grid gap-4 rounded-sm border border-[var(--border)] bg-deep p-5" onSubmit={submitRequest}>
-          <p className="font-semibold text-white">Request contact for this possible recommendation</p>
+          <p className="font-semibold text-primary">Request contact about this match</p>
           <label>
             <span className="mb-2 block text-sm font-semibold text-primary">Reason for contact</span>
             <textarea className={`${inputClass} min-h-24`} value={requestMessage} onChange={(event) => setRequestMessage(event.target.value)} required />
           </label>
+          <label className="flex items-start gap-3 text-sm text-muted"><input className="mt-1 h-5 w-5 accent-[var(--accent)]" type="checkbox" checked={humanReviewAcknowledged} onChange={(event) => setHumanReviewAcknowledged(event.target.checked)} required /><span>I reviewed this suggestion as a possible similarity only. I understand it may be wrong and does not confirm identity.</span></label>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit">Send Request</button>
-            <button className={`${buttonClass} border border-[var(--border)] text-primary`} type="button" onClick={() => setRequestOpen(false)}>Cancel</button>
+            <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit" disabled={Boolean(pendingAction)}>{pendingAction === "request_contact" ? <PendingLabel>Sending</PendingLabel> : "Send Request"}</button>
+            <button className={`${buttonClass} border border-[var(--border)] text-primary`} type="button" onClick={() => setRequestOpen(false)} disabled={Boolean(pendingAction)}>Cancel</button>
           </div>
         </form>
       ) : null}
       <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        {canManage ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={() => setRequestOpen(true)}>Request Contact</button> : <Link className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} href="/login">Sign In to Request Contact</Link>}
-        {canManage ? <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => updateRecommendation("view")}>Mark Viewed</button> : null}
-        <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={dismiss}>{canManage ? "Dismiss" : "Hide Recommendation"}</button>
-        {!canManage ? <Link className={`${buttonClass} border border-[var(--border)] text-primary`} href="/browse">Explore Public Cases</Link> : null}
+        {canManage && !requestSent ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={() => setRequestOpen(true)} disabled={Boolean(pendingAction)}>Request Contact</button> : null}
+        <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={dismiss} disabled={Boolean(pendingAction)}>{pendingAction === "dismiss" ? <PendingLabel>Dismissing</PendingLabel> : canManage ? "Not a match" : "Hide match"}</button>
+        {!canManage ? <Link className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} href={`/browse?caseId=${encodeURIComponent(item.similarReportId)}`}>Review Public Report</Link> : null}
       </div>
     </article>
   );
@@ -579,28 +678,29 @@ function Phase4RecommendationCard({ item, canManage = false }) {
 
 function RecommendationResults({ items = [], canManage = false }) {
   const [page, setPage] = useState(0);
-  const visible = items.slice(page * 5, page * 5 + 5);
-  const hasNext = (page + 1) * 5 < items.length;
-  if (!items.length) {
+  const [removed, setRemoved] = useState(() => new Set());
+  const pageSize = 5;
+  useEffect(() => { setPage(0); setRemoved(new Set()); }, [items]);
+  const activeItems = items.filter((item) => !removed.has(item.id || item.similarReportId));
+  const visible = activeItems.slice(page * pageSize, page * pageSize + pageSize);
+  const hasNext = (page + 1) * pageSize < activeItems.length;
+  if (!activeItems.length) {
     return (
       <div className="stitch-panel rounded-sm p-6">
-        <EmptyState title="No possible recommendations yet" description="You can explore public cases while human review continues." />
-        <Link className={`${buttonClass} mt-5 border border-[var(--border)] text-primary`} href="/browse">Explore Public Cases</Link>
+        <EmptyState title="No possible matches yet" description="New matches will appear here after reports are compared." />
+        <Link className={`${buttonClass} mt-5 border border-[var(--border)] text-primary`} href="/browse">Browse public reports</Link>
       </div>
     );
   }
   return (
     <section className="grid gap-5">
-      <div className="rounded-sm border border-[var(--border)] bg-deep p-5 text-sm text-muted">
-        {items.some((item) => item.textEmbeddingUsed)
-          ? "These possible recommendations use development-only English text embeddings and structured details. Evaluation is deferred, and human review is required."
-          : "These are public-safe possible recommendations generated with deterministic local scoring. They do not confirm identity."}
-      </div>
-      {visible.map((item) => <Phase4RecommendationCard key={item.id || item.similarReportId} item={item} canManage={canManage} />)}
+      <div className="rounded-sm border border-[var(--border)] bg-[var(--accent-soft)] p-4 text-sm text-primary">Possible matches can be wrong. Check the photograph and report details before requesting contact.</div>
+      <p className="text-sm text-muted">Showing {page * pageSize + 1}-{Math.min((page + 1) * pageSize, activeItems.length)} of {activeItems.length} possible matches.</p>
+      {visible.map((item) => <RecommendationReviewCard key={item.id || item.similarReportId} item={item} canManage={canManage} onRemoved={(id) => setRemoved((current) => new Set(current).add(id))} />)}
       <div className="flex flex-col gap-3 sm:flex-row">
         {page > 0 ? <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => setPage((current) => current - 1)}>Previous 5</button> : null}
         {hasNext ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={() => setPage((current) => current + 1)}>View Next 5</button> : null}
-        <Link className={`${buttonClass} border border-[var(--border)] text-primary`} href="/browse">Explore Public Cases</Link>
+        <Link className={`${buttonClass} border border-[var(--border)] text-primary`} href="/browse">Browse public reports</Link>
       </div>
     </section>
   );
@@ -621,13 +721,11 @@ export function ConnectionRequestCard({ request }) {
     setError("");
     setNotice("");
     try {
-      const response = await fetch(`/api/contact-requests/${request.id}`, {
+      const result = await requestJson(`/api/contact-requests/${request.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action })
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Unable to update request.");
       const nextStatus = result.status === "ACCEPTED" ? "Accepted" : result.status === "DECLINED" ? "Declined" : "Cancelled";
       setStatus(nextStatus);
       setContact(result.contact ? `${result.contact.method}: ${result.contact.value}` : "Hidden until acceptance");
@@ -648,19 +746,18 @@ export function ConnectionRequestCard({ request }) {
         </div>
         <StatusBadge status={`Contact ${status}`} />
       </div>
-      <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Info label="Broad Region" value={request.region} />
-        <Info label="Overall Score" value={`${request.score}%`} />
-        <Info label="Request Date" value={request.date} />
+       <dl className="mt-5 grid gap-3 sm:grid-cols-3">
+         <Info label="Broad Region" value={request.region} />
+         <Info label="Request Date" value={request.date} />
         <Info label="Contact" value={accepted ? contact : "Hidden until acceptance"} />
       </dl>
       {accepted ? <p className="mt-4 rounded-md bg-[var(--accent-soft)] p-3 text-sm text-accent">Contact Request Accepted. Only the selected contact method is visible to the two participants. This does not confirm identity.</p> : null}
       {notice ? <p className="mt-4 rounded-md bg-[var(--accent-soft)] p-3 text-sm text-accent">{notice}</p> : null}
       {error ? <p className="mt-4 rounded-md border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-3 text-sm text-primary">{error}</p> : null}
       <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        {request.canAccept ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={() => review("accept")} disabled={Boolean(pending)}>{pending === "accept" ? "Accepting..." : "Accept Contact Request"}</button> : null}
-        {request.canDecline ? <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => review("decline")} disabled={Boolean(pending)}>{pending === "decline" ? "Declining..." : "Decline Contact Request"}</button> : null}
-        {request.canCancel ? <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => review("cancel")} disabled={Boolean(pending)}>{pending === "cancel" ? "Cancelling..." : "Cancel Request"}</button> : null}
+        {request.canAccept && status === "Pending" ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={() => review("accept")} disabled={Boolean(pending)}>{pending === "accept" ? <PendingLabel>Accepting</PendingLabel> : "Accept Contact Request"}</button> : null}
+        {request.canDecline && status === "Pending" ? <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => review("decline")} disabled={Boolean(pending)}>{pending === "decline" ? <PendingLabel>Declining</PendingLabel> : "Decline Contact Request"}</button> : null}
+        {request.canCancel && status === "Pending" ? <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => review("cancel")} disabled={Boolean(pending)}>{pending === "cancel" ? <PendingLabel>Cancelling</PendingLabel> : "Cancel Request"}</button> : null}
       </div>
     </article>
   );
@@ -684,7 +781,7 @@ export function Timeline({ items }) {
 
 export function StatusBadge({ status }) {
   const tone = status?.includes("Declined") || status?.includes("Archived") ? "text-warning bg-warning/10" : "text-accent bg-[var(--accent-soft)]";
-  return <span className={cn("inline-flex rounded-sm px-2.5 py-1 font-mono text-[0.68rem] font-bold uppercase tracking-[0.12em]", tone)}>{status}</span>;
+  return <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", tone)}>{status}</span>;
 }
 
 export function PrivacyNoticeCard({ className = "" }) {
@@ -711,7 +808,7 @@ export function SearchInput({ value, onChange, placeholder = "Search" }) {
 export function FilterBar({ children }) {
   return (
     <div className="stitch-panel rounded-sm p-5">
-      <div className="mb-4 flex items-center gap-2 font-mono text-xs font-bold uppercase tracking-[0.16em] text-white">
+      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-primary">
         <SlidersHorizontal size={18} className="text-accent" />
         Filters
       </div>
@@ -737,15 +834,16 @@ export function LoadingSkeleton() {
 export function FormSection({ title, children }) {
   return (
     <section className="stitch-panel rounded-sm p-6">
-      <h2 className="font-mono text-lg font-bold uppercase tracking-[0.14em] text-white">{title}</h2>
+      <h2 className="font-display text-xl font-semibold tracking-tight text-primary">{title}</h2>
       <div className="mt-4 grid gap-4 md:grid-cols-2">{children}</div>
     </section>
   );
 }
 
-export function FileUploadField({ error, onFileChange }) {
+export function FileUploadField({ error, onFileChange, required = false }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState("");
+  const [localError, setLocalError] = useState("");
   const inputRef = useRef(null);
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -753,7 +851,9 @@ export function FileUploadField({ error, onFileChange }) {
   const handleChange = (event) => {
     const selected = event.target.files?.[0];
     if (preview) URL.revokeObjectURL(preview);
-    const valid = selected && ["image/jpeg", "image/png", "image/webp"].includes(selected.type);
+    const supported = selected && ["image/jpeg", "image/png", "image/webp"].includes(selected.type);
+    const valid = supported && selected.size <= 5 * 1024 * 1024;
+    setLocalError(!selected ? "" : !supported ? "Choose a JPG, PNG, or WEBP image." : selected.size > 5 * 1024 * 1024 ? "Choose an image that is 5 MB or smaller." : "");
     setFile(valid ? selected : null);
     setPreview(valid ? URL.createObjectURL(selected) : "");
     onFileChange?.(valid ? selected : null);
@@ -762,30 +862,32 @@ export function FileUploadField({ error, onFileChange }) {
     if (preview) URL.revokeObjectURL(preview);
     setFile(null);
     setPreview("");
+    setLocalError("");
     if (inputRef.current) inputRef.current.value = "";
     onFileChange?.(null);
   };
 
   return (
     <div className="rounded-sm border border-dashed border-[var(--border)] bg-deep p-5">
+      <p className="mb-3 text-sm font-semibold text-white">Person photo{required ? <RequiredMark /> : null}</p>
       <label className="grid min-h-44 cursor-pointer place-items-center rounded-sm border border-[var(--border)] bg-background p-5 text-center transition hover:border-accent">
         {preview ? (
           <Image src={preview} alt="Selected report preview" width={640} height={360} unoptimized className="max-h-48 w-full rounded-sm object-contain" />
         ) : (
           <span>
             <Upload className="mx-auto text-accent" size={28} aria-hidden="true" />
-            <span className="mt-3 block text-sm font-semibold text-white">Upload required person photo</span>
-            <span className="mt-1 block text-xs text-muted">JPG, PNG, or WEBP. Use a clear human face/person image.</span>
+            <span className="mt-3 block text-sm font-semibold text-white">Choose a person photo</span>
+            <span className="mt-1 block text-xs text-muted">JPG, PNG, or WEBP, maximum 5 MB. Use a clear, relevant person image.</span>
           </span>
         )}
-        <input ref={inputRef} className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" onChange={handleChange} />
+        <input ref={inputRef} className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" onChange={handleChange} aria-required={required} />
       </label>
       <div className="mt-3 flex flex-col justify-between gap-3 text-xs text-muted sm:flex-row sm:items-center">
         <span>{file ? file.name : "No file selected. A person/face image is required before submit."}</span>
         {file ? <button type="button" className="min-h-10 rounded-sm px-3 text-accent hover:bg-surface" onClick={clearFile}>Remove</button> : null}
       </div>
-      <p className="mt-2 text-xs text-muted">Phase 4 stores the selected image privately after submission. Automated face/person validation is not implemented in this local demo.</p>
-      <ErrorText text={error} />
+      <p className="mt-2 text-xs text-muted">The selected image is stored securely. Its display depends on the current report and presentation settings.</p>
+      <ErrorText text={localError || error} />
     </div>
   );
 }
@@ -806,8 +908,8 @@ function CaseIdDisplay({ caseId = "MP-2026-0047" }) {
       <p className="mt-3 font-mono text-4xl font-extrabold text-accent sm:text-5xl">{caseId}</p>
       <p className="mt-3 text-sm text-muted">Save this ID to track your report.</p>
       <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
-        <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => copy(caseId, "Case ID copied")}>Copy Case ID</button>
-        <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => copy(`${window.location.origin}/track?caseId=${encodeURIComponent(caseId)}`, "Tracking link copied")}>Copy Link</button>
+        <button type="button" className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => copy(caseId, "Case ID copied")}>Copy Case ID</button>
+        <button type="button" className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={() => copy(`${window.location.origin}/track?caseId=${encodeURIComponent(caseId)}`, "Tracking link copied")}>Copy Link</button>
         <Link href={`/track?caseId=${encodeURIComponent(caseId)}`} className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`}>Track This Case</Link>
       </div>
       {copied ? <p className="mt-3 text-sm text-muted" role="status">{copied}</p> : null}
@@ -816,7 +918,7 @@ function CaseIdDisplay({ caseId = "MP-2026-0047" }) {
 }
 
 export function DemoDataNotice() {
-  return <span className="inline-flex rounded-full border border-accent/40 bg-[var(--accent-soft)] px-4 py-2 font-mono text-xs font-bold uppercase tracking-[0.14em] text-accent">Demo Data • UI Preview • Demonstration Only</span>;
+  return <span className="inline-flex rounded-full border border-accent/40 bg-[var(--accent-soft)] px-4 py-2 font-mono text-xs font-bold uppercase tracking-[0.14em] text-accent">Local FYP Demo • Non-operational Data</span>;
 }
 
 export function DataTable({ columns, rows }) {
@@ -853,20 +955,37 @@ export function DataTable({ columns, rows }) {
   );
 }
 
-export function MobileDrawer({ title, routes, onClose }) {
+export function MobileDrawer({ title, routes, onClose, onLogout, logoutPending, logoutError }) {
+  const titleId = useId();
+  const pathname = usePathname();
+  useEffect(() => {
+    const closeOnEscape = (event) => { if (event.key === "Escape") onClose(); };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 lg:hidden" role="dialog" aria-modal="true">
-      <div className="ml-auto h-full w-[min(22rem,90vw)] border-l border-[var(--border)] bg-surface p-4 shadow-soft">
-        <div className="flex items-center justify-between">
-          <p className="font-display text-lg font-bold text-white">{title}</p>
-          <button className="grid h-10 w-10 place-items-center rounded-md border border-[var(--border)]" onClick={onClose} aria-label="Close navigation"><X size={20} /></button>
+    <div className="fixed inset-0 z-50 isolate min-h-screen lg:hidden" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <button className="fixed inset-0 block min-h-screen w-full cursor-default bg-black/55" onClick={onClose} aria-label="Close navigation overlay" />
+      <aside className="fixed inset-y-0 right-0 z-[1] flex min-h-screen w-[min(22rem,92vw)] flex-col overflow-y-auto border-l border-[var(--border)] bg-elevated shadow-2xl" style={{ backgroundColor: "#ffffff", height: "100dvh" }}>
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
+          <p id={titleId} className="pr-3 font-display text-lg font-bold text-primary">{title}</p>
+          <button className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-[var(--border)] bg-deep text-primary hover:border-accent" onClick={onClose} aria-label="Close navigation"><X size={20} /></button>
         </div>
-        <nav className="mt-6 grid gap-2">
-          {routes.map((route) => (
-            <Link key={route.href} href={route.href} onClick={onClose} className="rounded-md px-3 py-3 text-sm text-primary hover:bg-deep">{route.label}</Link>
-          ))}
+        <nav className="grid gap-2 p-4" aria-label="Mobile navigation">
+          {routes.map((route) => {
+            const active = route.href === "/" ? pathname === "/" : pathname === route.href || pathname.startsWith(`${route.href}/`);
+            return (
+              <Link key={route.href} href={route.href} onClick={onClose} aria-current={active ? "page" : undefined} className={`flex min-h-12 items-center rounded-md border px-4 py-3 text-sm font-semibold ${active ? "border-accent bg-[var(--accent-soft)] text-accent" : "border-[var(--border)] bg-deep text-primary hover:border-accent hover:text-accent"}`}>{route.label}</Link>
+            );
+          })}
         </nav>
-      </div>
+        {onLogout ? <div className="mt-auto border-t border-[var(--border)] bg-deep p-4"><button className={`${buttonClass} w-full border border-[var(--border)] bg-elevated text-primary hover:border-accent`} onClick={onLogout} disabled={logoutPending}>{logoutPending ? <PendingLabel>Signing Out</PendingLabel> : <><LogOut size={16} />Logout</>}</button>{logoutError ? <p className="mt-3 text-sm text-[var(--danger)]" role="alert">{logoutError}</p> : null}</div> : null}
+      </aside>
     </div>
   );
 }
@@ -882,45 +1001,48 @@ export function AdminSidebar({ name = "Admin" }) {
 function PortalSidebar({ title, routes, admin = false }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const links = [...routes, { href: "/", label: "Public Site" }];
   const logout = async () => {
-    const response = await fetch("/api/auth/logout", { method: "POST" });
-    const result = await response.json().catch(() => ({ redirectTo: "/login" }));
-    window.location.href = result.redirectTo || "/login";
+    setLogoutPending(true);
+    setLogoutError("");
+    try {
+      const result = await requestJson("/api/auth/logout", { method: "POST" });
+      window.location.href = result.redirectTo || "/login";
+    } catch (error) {
+      setLogoutError(error.message);
+      setLogoutPending(false);
+    }
   };
   return (
     <>
       <button className="fixed left-4 top-4 z-40 grid h-11 w-11 place-items-center rounded-sm border border-[var(--border)] bg-surface lg:hidden" onClick={() => setOpen(true)} aria-label="Open portal navigation">
         <Menu size={21} />
       </button>
-      {open ? <MobileDrawer title={title} routes={links} onClose={() => setOpen(false)} /> : null}
+      {open ? <MobileDrawer title={title} routes={links} onClose={() => setOpen(false)} onLogout={logout} logoutPending={logoutPending} logoutError={logoutError} /> : null}
       <aside className="hidden min-h-screen w-[292px] shrink-0 border-r border-[var(--border)] bg-surface p-7 lg:block">
         <Link href="/" className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-sm bg-[var(--accent-soft)] text-accent"><Shield size={20} /></span>
           <span>
-            <span className="block font-display text-2xl font-extrabold uppercase text-white">HumTrace AI</span>
-            <span className="font-mono text-xs uppercase tracking-[0.18em] text-accent">{title}</span>
+            <span className="block font-display text-2xl font-bold text-primary">HumTrace <span className="font-medium text-accent">AI</span></span>
+            <span className="text-xs font-semibold text-accent">{title}</span>
           </span>
         </Link>
         <nav className="mt-14 grid gap-4">
           {routes.map((route) => {
             const active = pathname === route.href;
             return (
-              <Link key={route.href} href={route.href} className={cn("rounded-sm px-5 py-4 font-mono text-sm font-bold uppercase tracking-[0.08em]", active ? "bg-accent text-deep" : "text-muted hover:bg-deep hover:text-white")}>
+              <Link key={route.href} href={route.href} className={cn("rounded-sm px-5 py-3 text-sm font-semibold", active ? "bg-accent text-white" : "text-muted hover:bg-deep hover:text-primary")}>
                 {route.label}
               </Link>
             );
           })}
         </nav>
-        <div className="mt-12 border-t border-[var(--border)] pt-8">
-          <div className="rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted">
-          {admin ? "Admin moderation does not confirm or reject identity. HumTrace AI only generates AI suggestions for reporter review." : "Manage submitted reports, AI suggestions, and consent-based Contact Requests."}
-          </div>
-        </div>
-        <div className="mt-6 grid gap-3">
-          <Link className={`${buttonClass} border border-[var(--border)] text-primary`} href="/">Public-site link</Link>
-          {admin ? <Link className={`${buttonClass} border border-[var(--border)] text-primary`} href="/admin/staff">Create Staff</Link> : null}
-          <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={logout}><LogOut size={16} /> Logout</button>
+        <div className="mt-12 grid gap-3 border-t border-[var(--border)] pt-8">
+          <Link className={`${buttonClass} border border-[var(--border)] text-primary`} href="/">View public site</Link>
+          <button className={`${buttonClass} border border-[var(--border)] text-primary`} onClick={logout} disabled={logoutPending}><LogOut size={16} /> {logoutPending ? <PendingLabel>Signing Out</PendingLabel> : "Logout"}</button>
+          {logoutError ? <p className="text-sm text-[var(--danger)]" role="alert">{logoutError}</p> : null}
         </div>
       </aside>
     </>
@@ -929,15 +1051,16 @@ function PortalSidebar({ title, routes, admin = false }) {
 
 export function ResponsiveTabs({ tabs }) {
   const [active, setActive] = useState(tabs[0]?.id);
+  const tabSetId = useId();
   const current = tabs.find((tab) => tab.id === active) || tabs[0];
   return (
     <div className="min-w-0 max-w-full overflow-hidden">
       <div className="mb-6 flex w-full max-w-full gap-4 overflow-x-auto border-b border-[var(--border)] bg-transparent pb-1" role="tablist">
         {tabs.map((tab) => (
-          <button key={tab.id} role="tab" aria-selected={active === tab.id} onClick={() => setActive(tab.id)} className={cn("min-h-12 shrink-0 border-b-2 px-1 font-mono text-sm font-bold uppercase tracking-[0.14em]", active === tab.id ? "border-accent text-accent" : "border-transparent text-muted hover:text-white")}>{tab.label}</button>
+          <button key={tab.id} id={`${tabSetId}-tab-${tab.id}`} aria-controls={`${tabSetId}-panel-${tab.id}`} role="tab" aria-selected={active === tab.id} tabIndex={active === tab.id ? 0 : -1} onClick={() => setActive(tab.id)} className={cn("min-h-12 shrink-0 border-b-2 px-1 text-sm font-semibold", active === tab.id ? "border-accent text-accent" : "border-transparent text-muted hover:text-primary")}>{tab.label}</button>
         ))}
       </div>
-      <div>{current.content}</div>
+      <div id={`${tabSetId}-panel-${current.id}`} role="tabpanel" aria-labelledby={`${tabSetId}-tab-${current.id}`}>{current.content}</div>
     </div>
   );
 }
@@ -948,7 +1071,7 @@ export function ChartCard({ title, type = "bar", data, metric }) {
     <div className="stitch-panel rounded-sm p-6">
       <h3 className="font-mono text-sm font-bold uppercase tracking-[0.16em] text-white">{title}</h3>
       {metric ? <div className="mt-4 rounded-sm border border-[var(--border)] bg-deep p-5"><p className="font-mono text-4xl font-bold text-accent">{metric.value}%</p><p className="mt-2 text-sm text-muted">{metric.label}</p></div> : null}
-      <div className="mt-4 h-64">
+      {!metric ? <div className="mt-4 h-64">
         <ResponsiveContainer width="100%" height="100%">
           {type === "line" ? (
             <LineChart data={chartData}>
@@ -969,25 +1092,20 @@ export function ChartCard({ title, type = "bar", data, metric }) {
             </BarChart>
           )}
         </ResponsiveContainer>
-      </div>
+      </div> : null}
     </div>
   );
 }
 
-export function NotificationCard({ text }) {
-  return (
-    <div className="flex items-center gap-3 rounded-sm border border-[var(--border)] bg-deep p-4 text-sm">
-      <Bell size={17} className="text-accent" />
-      <span>{text}</span>
-    </div>
-  );
-}
-
-export function BrowsePage({ searchMode = false, reportsData = reports }) {
+export function BrowsePage({ reportsData = reports, availability = "" }) {
   const [query, setQuery] = useState("");
   const [region, setRegion] = useState("All Regions");
   const [type, setType] = useState("All Types");
   const [selectedReport, setSelectedReport] = useState(null);
+  useEffect(() => {
+    const caseId = new URLSearchParams(window.location.search).get("caseId")?.trim().toUpperCase();
+    if (caseId) setSelectedReport(reportsData.find((report) => report.id === caseId) || null);
+  }, [reportsData]);
   const filtered = useMemo(() => {
     return reportsData.filter((report) => {
       const queryOk = `${report.id} ${report.type} ${report.region} ${report.description}`.toLowerCase().includes(query.toLowerCase());
@@ -999,25 +1117,16 @@ export function BrowsePage({ searchMode = false, reportsData = reports }) {
   return (
     <PublicShell>
       <PageHeader
-        title={searchMode ? "Search Public Reports" : "Browse Limited Public Information"}
-        description={searchMode ? "Search limited public fields only. Private notes and contact details are never shown." : "Review sample public report cards with broad regions, approximate dates, and respectful limited details."}
+        title="Browse reports"
+        description="Search missing and unidentified person reports by location or case details."
       />
       <Content>
-        <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-          <FilterBar>
+        <FilterBar>
           <SearchInput value={query} onChange={setQuery} placeholder="Search by report ID, region, or detail" />
           <Select value={region} onChange={setRegion} options={["All Regions", ...regions.filter((item) => item !== "Prefer Not to Specify")]} label="Broad region filter" />
-          <Select value={type} onChange={setType} options={["All Types", "Missing Person", "Unidentified Individual"]} label="Report type filter" />
-          <Select value="Any Date" onChange={() => {}} options={["Any Date", "Last 30 days", "Last 90 days", "2026"]} label="Approximate date filter" />
-          </FilterBar>
-          <PrivacyNoticeCard />
-        </div>
-        {searchMode ? <SectionHeader title="Search Results" description="Public results show limited database fields only. AI recommendations appear after a report workflow." /> : <SectionHeader title="Public Directory" description="Use filters to browse missing and unidentified cases." />}
-        {filtered.length ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{filtered.map((report) => <ReportCard key={report.id} report={report} onViewDetails={setSelectedReport} />)}</div> : <EmptyState title={searchMode ? "No Cases Found" : "No reports"} description="No public demonstration report fits the current filters." />}
-        <div className="stitch-panel flex items-center justify-between rounded-sm p-4 text-sm text-muted">
-          <span>Page 1 of 1</span>
-          <div className="flex gap-2"><button className={`${buttonClass} border border-[var(--border)] text-primary`}>Previous</button><button className={`${buttonClass} border border-[var(--border)] text-primary`}>Next</button></div>
-        </div>
+          <Select value={type} onChange={setType} options={["All Types", "Missing Person", "Unidentified Person"]} label="Report type filter" />
+        </FilterBar>
+        {availability ? <EmptyState title="Public browsing unavailable" description={availability} /> : filtered.length ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{filtered.map((report) => <ReportCard key={report.id} report={report} onViewDetails={setSelectedReport} />)}</div> : <EmptyState title="No reports" description="No public report fits the current filters." />}
       </Content>
       <ReportDetailsModal report={selectedReport} onClose={() => setSelectedReport(null)} />
     </PublicShell>
@@ -1030,28 +1139,29 @@ export function SmartSearchPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const submit = async (event) => {
-    event.preventDefault(); setError(""); setNotice(""); setLoading(true);
+    event.preventDefault(); setError(""); setNotice(""); setResults(null); setLoading(true);
     try {
-      const response = await fetch("/api/search/recommendations", { method: "POST", body: new FormData(event.currentTarget) });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || "Unable to search.");
+      const result = await requestJson("/api/search/recommendations", { method: "POST", body: new FormData(event.currentTarget) }, 210000);
       setResults(result.recommendations || []); setNotice(result.notice || "Search completed.");
     } catch (searchError) { setError(searchError.message); } finally { setLoading(false); }
   };
-  return <PublicShell><PageHeader title="Smart Search" description="Use a photograph, descriptive details, or both to look for public-safe possible recommendations." /><Content>
+  return <PublicShell><PageHeader title="Smart Search" description="Compare a photograph or description with public reports." /><Content>
     <form className="stitch-panel grid gap-5 rounded-sm p-6" onSubmit={submit}>
-      <div className="rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted">Phase 5 development can use English descriptive text embeddings when enabled. Evaluation is deferred. Photographs are validated and discarded but are not analyzed in this slice. Human review is required.</div>
+      <div className="rounded-sm border border-[var(--border)] bg-[var(--accent-soft)] p-4 text-sm text-primary">Your search photograph is used only for this comparison and is not saved.</div>
+      <label><span className="mb-2 block font-semibold">Search public report type</span><select className={inputClass} name="searchScope" defaultValue="ALL"><option value="ALL">All missing and unidentified reports</option><option value="UNIDENTIFIED">Unidentified reports only</option><option value="MISSING">Missing-person reports only</option></select><span className="mt-2 block text-xs text-muted">All eligible public reports in the selected scope are compared; up to 10 suggestions are shown five at a time.</span></label>
       <label><span className="mb-2 block font-semibold">Optional photograph</span><input className={inputClass} type="file" name="photo" accept="image/jpeg,image/png,image/webp" /><span className="mt-2 block text-xs text-muted">JPG, PNG or WEBP, maximum 5 MB. Search uploads are not stored.</span></label>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><label><span>Approximate age</span><input className={inputClass} name="age" /></label><label><span>Gender</span><select className={inputClass} name="gender" defaultValue=""><option value="">Not specified</option><option>Female</option><option>Male</option><option>Other</option></select></label><label><span>Height (cm)</span><input className={inputClass} type="number" name="heightCm" min="30" max="260" /></label><label><span>Weight (kg)</span><input className={inputClass} type="number" name="weightKg" min="2" max="300" /></label><label><span>Broad region</span><input className={inputClass} name="region" /></label><label><span>Location detail</span><input className={inputClass} name="location" /></label><label><span>Clothing</span><input className={inputClass} name="clothing" /></label><label><span>Identifying features</span><input className={inputClass} name="identifyingFeatures" /></label></div>
       <label><span>Description</span><textarea className={`${inputClass} min-h-28`} name="description" /></label>
-      {error ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm">{error}</div> : null}<button className={`${buttonClass} bg-accent text-white`} disabled={loading}>{loading ? "Searching..." : "Find Possible Recommendations"}</button>
+      <label className="flex items-start gap-3 rounded-sm border border-[var(--border)] bg-deep p-4 text-sm"><input className="mt-1 h-5 w-5 accent-[var(--accent)]" type="checkbox" name="aiProcessingConsent" value="true" required /><span>I am authorized to use these details or this photograph for this search. I understand similarity suggestions can be wrong and never confirm identity.</span></label>
+      {loading ? <div className="flex items-start gap-3 rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted" role="status"><LoaderCircle className="mt-0.5 animate-spin text-accent" size={18} /><span>Comparing public reports. This may take a few minutes.</span></div> : null}
+      {error ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm" role="alert">{error} Please retry.</div> : null}<button type="submit" className={`${buttonClass} bg-accent text-white`} disabled={loading}>{loading ? <PendingLabel>Searching</PendingLabel> : "Find Possible Recommendations"}</button>
     </form>
-    {notice ? <div className="rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted">{notice}</div> : null}
+    {notice ? <div className="rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted" role="status">{notice}</div> : null}
     {results !== null ? <RecommendationResults items={results} /> : null}
   </Content></PublicShell>;
 }
 
-export function ReportFormPage({ type }) {
+export function ReportFormPage({ type, reporter }) {
   const missing = type === "missing";
   const today = new Date().toISOString().slice(0, 10);
   const schema = z.object({
@@ -1064,8 +1174,8 @@ export function ReportFormPage({ type }) {
     clothing: z.string().max(500, "Clothing notes are too long.").optional(),
     identifyingFeatures: z.string().max(500, "Feature notes are too long.").optional(),
     medicalCondition: z.string().max(300, "Medical notes are too long.").optional(),
-    heightFeet: z.string().min(1, "Height in feet is required.").refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, "Enter height as a number in feet."),
-    weightKg: z.string().min(1, "Weight is required.").refine((value) => Number.isFinite(Number(value)) && Number(value) > 0, "Enter weight as a number."),
+    heightFeet: z.string().min(1, "Height in feet is required.").refine((value) => Number.isFinite(Number(value)) && Number(value) >= 1 && Number(value) <= 8.5, "Enter a realistic height from 1 to 8.5 feet."),
+    weightKg: z.string().min(1, "Weight is required.").refine((value) => Number.isFinite(Number(value)) && Number(value) >= 2 && Number(value) <= 300, "Enter a realistic weight from 2 to 300 kg."),
     gender: z.string().optional(),
     reporterName: z.string().min(2, "Reporter name is required."),
     reporterPhone: z.string().optional(),
@@ -1079,14 +1189,14 @@ export function ReportFormPage({ type }) {
     photoConfirm: z.literal(true, { errorMap: () => ({ message: "Confirm the uploaded image shows a human face/person." }) }),
     consent: z.literal(true, { errorMap: () => ({ message: "Consent is required for local report submission." }) })
   });
+  const reporterFields = reporter
+    ? ["relationship", "reporterContext", "relationshipContext"]
+    : ["reporterName", "reporterEmail", "reporterPhone", "preferredContactMethod", "relationship", "reporterContext", "relationshipContext"];
   const steps = [
-    { title: "Person Details", fields: ["name", "age", "gender", "heightFeet", "weightKg"] },
-    { title: missing ? "Last Seen Details" : "Found Location", fields: ["region", "locationDetail", "date"] },
-    { title: "Description", fields: ["description", "clothing", "identifyingFeatures", "medicalCondition"] },
-    { title: "Photo Upload", fields: [] },
-    { title: "Reporter Information", fields: ["reporterName", "reporterPhone", "reporterEmail", "relationship", "reporterContext", "relationshipContext", "preferredContactMethod"] },
-    { title: "Privacy and Consent", fields: ["publicVisible", "aiProcessingConsent", "photoConfirm", "consent"] },
-    { title: "Review and Submit", fields: [] }
+    { title: "Person and location", fields: ["name", "age", "gender", "heightFeet", "weightKg", "region", "locationDetail", "date"] },
+    { title: "Description and photo", fields: ["description", "clothing", "identifyingFeatures", "medicalCondition"] },
+    { title: "Reporter and permissions", fields: [...reporterFields, "publicVisible", "aiProcessingConsent", "photoConfirm", "consent"] },
+    { title: "Review and submit", fields: [] }
   ];
   const [step, setStep] = useState(0);
   const [message, setMessage] = useState("");
@@ -1096,6 +1206,7 @@ export function ReportFormPage({ type }) {
   const [photoError, setPhotoError] = useState("");
   const [immediateRecommendations, setImmediateRecommendations] = useState([]);
   const [recommendationNotice, setRecommendationNotice] = useState("");
+  const [claimCode, setClaimCode] = useState("");
   const { register, handleSubmit, trigger, watch, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -1103,12 +1214,15 @@ export function ReportFormPage({ type }) {
       photoConfirm: false,
       publicVisible: false,
       aiProcessingConsent: false,
-      preferredContactMethod: "EMAIL"
+      preferredContactMethod: reporter?.preferredContactMethod || "EMAIL"
+      ,reporterName: reporter?.name || ""
+      ,reporterPhone: reporter?.phone || ""
+      ,reporterEmail: reporter?.email || ""
     }
   });
   const values = watch();
   const nextStep = async () => {
-    if (step === 3 && !photoFile) {
+    if (step === 1 && !photoFile) {
       setPhotoError("Upload a clear human face/person image before continuing.");
       return;
     }
@@ -1131,15 +1245,15 @@ export function ReportFormPage({ type }) {
         formData.append(key, typeof value === "boolean" ? String(value) : value || "");
       });
       formData.append("photo", photoFile);
-      const response = await fetch("/api/reports", {
+      const result = await requestJson("/api/reports", {
         method: "POST",
         body: formData
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || "Unable to submit report.");
-      }
+      }, 30000);
       setMessage(result.caseId);
+      setClaimCode(result.claimCode || "");
+      if (result.claimCode) {
+        window.sessionStorage.setItem(`humtrace-report-claim:${result.caseId}`, result.claimCode);
+      }
       setImmediateRecommendations(result.recommendations || []);
       setRecommendationNotice(result.recommendationNotice || "");
     } catch (error) {
@@ -1155,43 +1269,44 @@ export function ReportFormPage({ type }) {
   return (
     <PublicShell>
       <PageHeader
-        title={missing ? "Submit Missing Person Report" : "Submit Unidentified Individual Report"}
-        description={missing ? "Submit details for a missing person case. AI suggestions assist human decision-making only." : "Submit respectful details for an unidentified person case. AI suggestions assist human decision-making only."}
+        title={missing ? "Report a missing person" : "Report an unidentified person"}
+        description="Add the information you know. You can review everything before submitting."
       />
       <Content>
-        <div className="grid gap-7 xl:grid-cols-[1fr_420px]">
+        <div className="mx-auto max-w-4xl">
         <form className="grid gap-5" onSubmit={handleFormSubmit}>
+          <p className="text-sm text-muted"><span className="font-bold text-accent" aria-hidden="true">*</span> Required field</p>
           <div className="stitch-panel rounded-sm p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="stitch-label">Step {step + 1} of {steps.length}</p>
-                <h2 className="mt-2 font-display text-2xl font-extrabold uppercase text-white">{steps[step].title}</h2>
+                <p className="text-sm font-semibold text-accent">Step {step + 1} of {steps.length}</p>
+                <h2 className="mt-2 font-display text-2xl font-semibold text-primary">{steps[step].title}</h2>
               </div>
               <div className="flex gap-1">
                 {steps.map((item, index) => <span key={item.title} className={cn("h-2 w-8 rounded-full", index <= step ? "bg-accent" : "bg-high")} />)}
               </div>
             </div>
           </div>
-          {step === 0 ? <FormSection title="Step 1: Person Details">
+          {step === 0 ? <FormSection title="Person details">
             {missing ? (
-              <Field label="Full Name" register={register("name")} error={errors.name?.message} />
+              <Field label="Full Name" required register={register("name")} error={errors.name?.message} />
             ) : (
               <Field label="Name if known" register={register("name")} error={errors.name?.message} />
             )}
-            <Field label="Approximate age" register={register("age")} error={errors.age?.message} />
+            <Field label="Approximate age" required register={register("age")} error={errors.age?.message} />
             <SelectField label="Gender" register={register("gender")} options={["Female", "Male", "Other", "Not specified"]} />
-            <Field label="Height (feet)" register={register("heightFeet")} error={errors.heightFeet?.message} />
-            <Field label="Weight (kg)" register={register("weightKg")} error={errors.weightKg?.message} />
+            <Field label="Height (feet)" required register={register("heightFeet")} error={errors.heightFeet?.message} />
+            <Field label="Weight (kg)" required register={register("weightKg")} error={errors.weightKg?.message} />
           </FormSection> : null}
-          {step === 1 ? <FormSection title={missing ? "Step 2: Last Seen Details" : "Step 2: Found Location"}>
+          {step === 0 ? <FormSection title={missing ? "Last seen" : "Found location"}>
             <SelectField label="Broad region / city" register={register("region")} error={errors.region?.message} options={regions} />
             <Field label={missing ? "Last seen location detail" : "Found location detail"} register={register("locationDetail")} error={errors.locationDetail?.message} />
             <Field label={missing ? "Date Missing" : "Date Found"} type="date" register={register("date")} error={errors.date?.message} />
           </FormSection> : null}
-          {step === 2 ? <FormSection title="Step 3: Description">
+          {step === 1 ? <FormSection title="Description">
             <label className="md:col-span-2">
-              <span className="mb-2 block text-sm font-semibold text-primary">Physical Description</span>
-              <textarea className={`${inputClass} min-h-32`} {...register("description")} />
+              <span className="mb-2 block text-sm font-semibold text-primary">Physical Description<RequiredMark /></span>
+              <textarea className={`${inputClass} min-h-32`} {...register("description")} required aria-required="true" />
               <ErrorText text={errors.description?.message} />
             </label>
             <label>
@@ -1210,17 +1325,20 @@ export function ReportFormPage({ type }) {
               <ErrorText text={errors.medicalCondition?.message} />
             </label>
           </FormSection> : null}
-          {step === 3 ? <FormSection title="Step 4: Photo Upload">
+          {step === 1 ? <FormSection title="Photograph">
             <div className="md:col-span-2">
-              <FileUploadField error={photoError} onFileChange={(file) => { setPhotoFile(file); setPhotoError(""); }} />
+              <FileUploadField required error={photoError} onFileChange={(file) => { setPhotoFile(file); setPhotoError(""); }} />
             </div>
           </FormSection> : null}
-          {step === 4 ? <FormSection title="Step 5: Reporter Information">
-            <Field label="Your Name" register={register("reporterName")} error={errors.reporterName?.message} />
-            <Field label="Phone" register={register("reporterPhone")} error={errors.reporterPhone?.message} />
-            <Field label="Email" register={register("reporterEmail")} error={errors.reporterEmail?.message} />
+          {step === 2 ? <FormSection title="Your information">
+            {reporter ? <div className="md:col-span-2 rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted"><p className="font-semibold text-white">Signed-in report owner</p><p className="mt-2">{reporter.name} • {reporter.email}</p><p className="mt-1">Accepted contact requests use the account&apos;s {String(reporter.preferredContactMethod || "EMAIL").toLowerCase()} preference.</p></div> : <>
+              <div className="md:col-span-2 rounded-sm border border-blue-400/30 bg-blue-500/10 p-4 text-sm leading-6 text-primary"><p className="font-semibold text-primary">You can submit without an account.</p><p className="mt-2">We will give you a one-time code so you can claim the report after signing in.</p></div>
+              <Field label="Reporter name" required register={register("reporterName")} error={errors.reporterName?.message} />
+              <Field label="Reporter email" required type="email" register={register("reporterEmail")} error={errors.reporterEmail?.message} />
+              <Field label="Reporter phone (optional)" type="tel" register={register("reporterPhone")} error={errors.reporterPhone?.message} />
+              <SelectField label="Preferred contact method" required register={register("preferredContactMethod")} error={errors.preferredContactMethod?.message} options={["EMAIL", "PHONE"]} />
+            </>}
             <SelectField label="Relationship" register={register("relationship")} error={errors.relationship?.message} options={["Family Member", "Police/Authority", "Friend", "Community Member", "Organization", "Other"]} />
-            <SelectField label="Preferred contact method" register={register("preferredContactMethod")} error={errors.preferredContactMethod?.message} options={["EMAIL", "PHONE"]} />
             <label>
               <span className="mb-2 block text-sm font-semibold text-primary">Reporter or organization context</span>
               <textarea className={`${inputClass} min-h-24`} {...register("reporterContext")} />
@@ -1232,27 +1350,27 @@ export function ReportFormPage({ type }) {
               <ErrorText text={errors.relationshipContext?.message} />
             </label>
           </FormSection> : null}
-          {step === 5 ? <FormSection title="Step 6: Privacy and Consent">
+          {step === 2 ? <FormSection title="Permissions">
             <label className="flex gap-3 rounded-md border border-[var(--border)] bg-deep p-4 text-sm md:col-span-2">
               <input type="checkbox" className="mt-1 h-5 w-5 accent-[var(--accent)]" {...register("publicVisible")} />
-              <span>I understand public visibility still requires human review. Sensitive details and contact information remain hidden.</span>
+               <span><strong>Show this report publicly.</strong> Contact details and the uploaded photograph will stay private.</span>
             </label>
             <label className="flex gap-3 rounded-md border border-[var(--border)] bg-deep p-4 text-sm md:col-span-2">
               <input type="checkbox" className="mt-1 h-5 w-5 accent-[var(--accent)]" {...register("photoConfirm")} />
-              <span>I confirm the uploaded image is a clear human face/person image, not an animal, object, or unrelated photo.</span>
+                <span>I confirm that the photograph clearly shows the person in this report.<RequiredMark /></span>
             </label>
             <label className="flex gap-3 rounded-md border border-[var(--border)] bg-deep p-4 text-sm md:col-span-2">
               <input type="checkbox" className="mt-1 h-5 w-5 accent-[var(--accent)]" {...register("aiProcessingConsent")} />
-              <span>Allow development-only local English text embeddings for this active report. Evaluation is deferred, and this permission can be withdrawn in a later Phase 5 lifecycle step.</span>
+              <span><strong>Use this photograph and description to find possible matches.</strong> This includes face-pattern and English-text comparison.</span>
             </label>
             <div className="md:col-span-2"><ErrorText text={errors.photoConfirm?.message} /></div>
             <label className="flex gap-3 rounded-md border border-[var(--border)] bg-deep p-4 text-sm md:col-span-2">
               <input type="checkbox" className="mt-1 h-5 w-5 accent-[var(--accent)]" {...register("consent")} />
-              <span>I understand this Phase 4 local-demo form saves report details and the selected image privately, and that contact sharing requires mutual consent.</span>
+                <span>I understand that my report will be stored and that contact details are shared only after a request is accepted.<RequiredMark /></span>
             </label>
             <div className="md:col-span-2"><ErrorText text={errors.consent?.message} /></div>
           </FormSection> : null}
-          {step === 6 ? <FormSection title="Step 7: Review and Submit">
+          {step === 3 ? <FormSection title="Review your report">
             <div className="md:col-span-2 rounded-sm border border-[var(--border)] bg-deep p-5 text-sm text-primary">
               <p className="font-semibold text-white">Review summary</p>
               <dl className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1261,43 +1379,33 @@ export function ReportFormPage({ type }) {
                 <Info label="Region" value={values.region || "Not set"} />
                 <Info label={missing ? "Last seen" : "Found"} value={values.locationDetail || "Not set"} />
                 <Info label="Reporter" value={values.reporterName || "Not set"} />
-                <Info label="Public request" value={values.publicVisible ? "Requested for review" : "Not requested"} />
+                <Info label="Public visibility" value={values.publicVisible ? "Publish immediately" : "Keep limited"} />
               </dl>
-              <p className="mt-4 text-muted">Submission creates the report, private photo metadata, timeline event, notification, and audit log together.</p>
+              <p className="mt-4 text-muted">Check the details above. You can return to an earlier step if something needs changing.</p>
             </div>
           </FormSection> : null}
-          {submitError ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary"><strong className="text-white">Please fix this:</strong> {submitError}</div> : null}
-          {message ? <div className="rounded-sm border border-[var(--success)]/40 bg-[var(--success)]/10 p-4 text-sm text-primary"><strong className="text-white">Submission notification:</strong> Case {message} and its local image file were saved for human review.</div> : null}
+          {submitError ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary" role="alert"><strong className="text-white">Please fix this:</strong> {submitError} If the service is unavailable, keep your details and retry once it is online.</div> : null}
+          {message ? <div className="rounded-sm border border-[var(--success)]/40 bg-[var(--success)]/10 p-4 text-sm text-primary" role="status"><strong>Report submitted.</strong> Your case ID is {message}. Possible matches will appear when they are ready.</div> : null}
           {message ? <CaseIdDisplay caseId={message} /> : null}
+          {message && claimCode ? <div className="rounded-sm border border-amber-400/40 bg-amber-500/10 p-5 text-sm text-primary">
+            <p className="font-semibold text-white">Save this one-time report claim code</p>
+            <p className="mt-3 break-all font-mono text-xl font-bold tracking-wider text-amber-200">{claimCode}</p>
+            <p className="mt-3 leading-6 text-muted">This code is shown only once. Sign in with <span className="text-primary">{values.reporterEmail}</span> to claim and manage the report. Do not share the code.</p>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+              <Link className={`${buttonClass} bg-accent text-white`} href={`/login?returnTo=${encodeURIComponent(`/reporter/claim-report?caseId=${message}`)}`}>Sign In and Claim</Link>
+              <Link className={`${buttonClass} border border-[var(--border)] text-primary`} href={`/register?returnTo=${encodeURIComponent(`/reporter/claim-report?caseId=${message}`)}`}>Register and Claim</Link>
+            </div>
+          </div> : null}
           {message ? <div className="grid gap-4">
-            <SectionHeader title="Possible Recommendations" description={recommendationNotice || "Public-safe possible recommendations appear here when available."} />
+            <SectionHeader title="Possible matches" description={recommendationNotice || "Matches will appear here when available."} />
             <RecommendationResults items={immediateRecommendations} />
           </div> : null}
-          <div className="flex flex-col gap-3 sm:flex-row">
+          {!message ? <div className="flex flex-col gap-3 sm:flex-row">
             {step > 0 ? <button className={`${buttonClass} border border-[var(--border)] text-primary`} type="button" onClick={previousStep}>Back</button> : null}
             {step < steps.length - 1 ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} type="button" onClick={nextStep}>Next</button> : null}
-            {step === steps.length - 1 ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit" disabled={submitting}>{submitting ? "Submitting..." : "Submit Report"}</button> : null}
-          </div>
+            {step === steps.length - 1 ? <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit" disabled={submitting}>{submitting ? <PendingLabel>Submitting</PendingLabel> : "Submit Report"}</button> : null}
+          </div> : null}
         </form>
-        <aside className="grid content-start gap-5">
-          <PrivacyNoticeCard />
-          <div className="stitch-panel rounded-sm p-6">
-            <p className="stitch-label">Secure local workflow</p>
-            <h2 className="mt-3 font-display text-2xl font-extrabold uppercase text-white">Human review required</h2>
-            <p className="mt-4 text-sm leading-7 text-muted">Report metadata is saved to the local SQLite database and images are stored privately. Automated face/person validation is still a future step.</p>
-          </div>
-          <div className="stitch-panel rounded-sm border-dashed p-6">
-            <p className="stitch-label">Submission Steps</p>
-            <div className="mt-5 grid gap-3">
-              {steps.map((item, index) => (
-                <div key={item.title} className="flex items-center gap-3 border-b border-[var(--border)] pb-3 last:border-0">
-                  <span className="font-mono text-accent">0{index + 1}</span>
-                  <span className="text-sm text-primary">{item.title}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </aside>
         </div>
       </Content>
     </PublicShell>
@@ -1309,6 +1417,7 @@ export function TrackPage() {
   const [report, setReport] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [trackError, setTrackError] = useState("");
   useEffect(() => {
     const caseId = new URLSearchParams(window.location.search).get("caseId");
     if (caseId) setId(caseId);
@@ -1318,12 +1427,14 @@ export function TrackPage() {
   const track = async () => {
     setSubmitted(true);
     setReport(null);
+    setTrackError("");
     if (!/^(MP|UI)-\d{4}-\d{4}$/.test(normalizedId)) return;
     setLoading(true);
     try {
-      const response = await fetch(`/api/track/${encodeURIComponent(normalizedId)}`);
-      const result = await response.json();
-      if (response.ok) setReport(result.report);
+      const result = await requestJson(`/api/track/${encodeURIComponent(normalizedId)}`, {}, 15000);
+      setReport(result.report);
+    } catch (error) {
+      if (error.status !== 404) setTrackError(error.message);
     } finally {
       setLoading(false);
     }
@@ -1338,11 +1449,12 @@ export function TrackPage() {
               <span className="mb-2 block text-sm font-semibold text-primary">Case ID</span>
               <input className={inputClass} value={id} maxLength={12} onChange={(event) => setId(event.target.value)} placeholder="MP-2026-0047" />
             </label>
-            <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={track} disabled={loading}>{loading ? "Checking..." : "Track Case"}</button>
+             <button className={`${buttonClass} bg-accent text-white hover:bg-[var(--red-dark)]`} onClick={track} disabled={loading}>{loading ? <PendingLabel>Checking</PendingLabel> : "Track Case"}</button>
           </div>
         </div>
         {invalid ? <EmptyState title="Invalid Case ID" description="Use a sample format such as MP-2026-0047." /> : null}
-        {submitted && !invalid && !loading && !report ? <EmptyState title="No result" description="No public tracking result is available for that ID." /> : null}
+        {trackError ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm" role="alert">{trackError} Check your connection or local service, then retry.</div> : null}
+        {submitted && !invalid && !loading && !report && !trackError ? <EmptyState title="No result" description="No public tracking result is available for that ID." /> : null}
         {report ? (
           <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
             <div className="stitch-panel rounded-sm p-6">
@@ -1351,19 +1463,18 @@ export function TrackPage() {
               <dl className="mt-5 grid gap-3"><Info label="Case type" value={report.type} /><Info label="Submission date" value={report.date} /><Info label="Last update" value={report.lastUpdate} /></dl>
             </div>
             <Timeline items={report.timeline?.length ? report.timeline : [
-              { title: "Report saved", date: "Current", description: "This case exists in the local HumTrace AI database." },
-              { title: "Human review required", date: "Next", description: "Public visibility and contact sharing require review and consent." }
+              { title: "Report received", date: "Current", description: "The report has been saved." },
+              { title: "Review", date: "Next", description: "Check the report status here for updates." }
             ]} />
           </div>
         ) : null}
-        <PrivacyNoticeCard />
       </Content>
     </PublicShell>
   );
 }
 
 export function ContactPage() {
-  return <SimpleFormPage title="Contact" description="For emergencies in Pakistan: Rescue 1122, Police 15, Edhi Foundation 115, Chhipa Welfare 1020. For missing person reports, use the report page." submitText="Demo contact form only. Message delivery is not implemented in the Phase 4 local demo." fields={["Your Name", "Email Address", "Subject", "Case ID, optional", "Your Message"]} />;
+  return <PublicShell><PageHeader title="Help and emergency contacts" description="HumTrace is not an emergency service." /><Content narrow><div className="stitch-panel rounded-sm p-6"><p className="font-semibold text-primary">Pakistan emergency contacts</p><p className="mt-3 text-sm leading-7 text-muted">Rescue 1122 · Police 15 · Edhi Foundation 115 · Chhipa Welfare 1020</p><p className="mt-4 text-sm leading-7 text-muted">For a HumTrace report, sign in to review matches or contact requests. Contact details remain private until a request is accepted.</p><div className="mt-5 flex flex-col gap-3 sm:flex-row"><Link className={`${buttonClass} bg-accent text-white`} href="/report/missing">Report a missing person</Link><Link className={`${buttonClass} border border-[var(--border)] text-primary`} href="/browse">Browse reports</Link></div></div></Content></PublicShell>;
 }
 
 export function AuthPage({ mode }) {
@@ -1374,8 +1485,8 @@ export function AuthPage({ mode }) {
       <Content>
         <div className="mx-auto flex min-h-[calc(100vh-220px)] w-full max-w-md items-center py-10">
           <SimpleForm
-            title={adminLogin ? "Admin Portal" : login ? "Welcome Back" : "Create Your Account"}
-            description={adminLogin ? "Sign in with an existing Admin account. Public registration never creates Admin access." : login ? "Sign in with your registered email and password." : "Create a reporter account. After registration, sign in to open your dashboard."}
+            title={adminLogin ? "Admin sign in" : login ? "Sign in" : "Create an account"}
+            description={adminLogin ? "Use an existing administrator account." : login ? "Use your reporter email and password." : "Create a reporter account to manage reports, matches and contact requests."}
             submitText={login ? "Sign in failed." : "Registration failed."}
             fields={login ? ["Email Address", "Password"] : ["Full Name", "Email Address", "Password", "Confirm Password", "Privacy Consent"]}
             authMode={mode}
@@ -1386,22 +1497,12 @@ export function AuthPage({ mode }) {
   );
 }
 
-function SimpleFormPage({ title, description, submitText, fields, authMode }) {
-  return (
-    <PublicShell>
-      <PageHeader title={title} description={description} />
-      <Content narrow>
-        <SimpleForm title={title} submitText={submitText} fields={fields} authMode={authMode} />
-      </Content>
-    </PublicShell>
-  );
-}
-
 function SimpleForm({ title, description, submitText, fields, authMode }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [returnTo, setReturnTo] = useState("");
   const [authValues, setAuthValues] = useState({
     name: "",
     email: "",
@@ -1410,6 +1511,9 @@ function SimpleForm({ title, description, submitText, fields, authMode }) {
     confirmPassword: "",
     consent: false
   });
+  useEffect(() => {
+    setReturnTo(new URLSearchParams(window.location.search).get("returnTo") || "");
+  }, []);
   const updateAuthValue = (key, value) => setAuthValues((current) => ({ ...current, [key]: value }));
   const submitAuth = async (event) => {
     event.preventDefault();
@@ -1422,7 +1526,7 @@ function SimpleForm({ title, description, submitText, fields, authMode }) {
     setPending(true);
     try {
       const endpoint = authMode === "login" || authMode === "admin" ? "/api/auth/login" : "/api/auth/register";
-      const response = await fetch(endpoint, {
+      const result = await requestJson(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1430,12 +1534,11 @@ function SimpleForm({ title, description, submitText, fields, authMode }) {
           email: authValues.email,
           phone: authValues.phone,
           password: authValues.password,
-          returnTo: new URLSearchParams(window.location.search).get("returnTo") || ""
-          ,adminOnly: authMode === "admin"
+          returnTo: new URLSearchParams(window.location.search).get("returnTo") || returnTo
+          ,adminOnly: authMode === "admin",
+          privacyConsent: authValues.consent
         })
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || submitText);
       setMessage(authMode === "login" || authMode === "admin" ? "Signed in. Redirecting..." : "Account created. Please sign in.");
       window.location.href = result.redirectTo;
     } catch (authError) {
@@ -1450,7 +1553,7 @@ function SimpleForm({ title, description, submitText, fields, authMode }) {
       <form className="stitch-panel w-full rounded-sm p-7" onSubmit={submitAuth}>
         {description ? <div className="mb-6 text-center">
           <LogoText className="text-2xl" />
-          <h1 className="mt-6 font-display text-3xl font-extrabold uppercase text-white">{title}</h1>
+          <h1 className="mt-6 font-display text-3xl font-semibold text-primary">{title}</h1>
           <p className="mt-3 text-sm leading-6 text-muted">{description}</p>
         </div> : null}
         <div className="grid gap-4">
@@ -1473,16 +1576,20 @@ function SimpleForm({ title, description, submitText, fields, authMode }) {
             <span className="mb-2 block text-sm font-semibold text-primary">Confirm Password</span>
             <input className={inputClass} type={showPassword ? "text" : "password"} value={authValues.confirmPassword} onChange={(event) => updateAuthValue("confirmPassword", event.target.value)} required minLength={8} />
           </label> : null}
+          {!login ? <label>
+            <span className="mb-2 block text-sm font-semibold text-primary">Phone (optional)</span>
+            <input className={inputClass} type="tel" value={authValues.phone} onChange={(event) => updateAuthValue("phone", event.target.value)} />
+          </label> : null}
           {!login ? <label className="flex min-h-12 gap-3 rounded-sm border border-[var(--border)] bg-deep p-4 text-sm">
             <input className="mt-1 h-5 w-5 shrink-0 accent-[var(--accent)]" type="checkbox" checked={authValues.consent} onChange={(event) => updateAuthValue("consent", event.target.checked)} required />
-            <span>I agree to the privacy notice for this local demo.</span>
+            <span>I agree to the privacy notice.</span>
           </label> : null}
         </div>
         {error ? <div className="mt-5 rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary">{error}</div> : null}
         {message ? <div className="mt-5 rounded-sm bg-[var(--accent-soft)] p-4 text-sm text-accent">{message}</div> : null}
-        {!login ? <div className="mt-5 rounded-sm border border-blue-400/30 bg-blue-500/10 p-4 text-sm text-primary">Public registration creates reporter accounts only. After creating an account, sign in from the login page.</div> : null}
-        <button className={`${buttonClass} mt-5 w-full bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit" disabled={pending}>{pending ? "Please wait..." : login ? "Sign In" : "Create Account"}</button>
-        <Link className="mt-4 block min-h-10 py-2 text-center text-sm text-accent" href={authMode === "admin" ? "/login" : login ? "/register" : "/login"}>{authMode === "admin" ? "Return to standard sign in" : login ? "Don't have an account? Register" : "Already have an account? Sign In"}</Link>
+        {!login ? <div className="mt-5 rounded-sm border border-blue-400/30 bg-blue-500/10 p-4 text-sm text-primary">This creates a reporter account. Administrative access is separate.</div> : null}
+        <button className={`${buttonClass} mt-5 w-full bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit" disabled={pending}>{pending ? <PendingLabel>Please Wait</PendingLabel> : login ? "Sign In" : "Create Account"}</button>
+        <Link className="mt-4 block min-h-10 py-2 text-center text-sm text-accent" href={authMode === "admin" ? "/login" : `${login ? "/register" : "/login"}${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`}>{authMode === "admin" ? "Return to standard sign in" : login ? "Don't have an account? Register" : "Already have an account? Sign In"}</Link>
       </form>
     );
   }
@@ -1517,7 +1624,6 @@ function SimpleForm({ title, description, submitText, fields, authMode }) {
               )
             ))}
           </div>
-          {authMode === "login" ? <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted"><label className="flex min-h-10 items-center gap-2"><input className="h-5 w-5 accent-[var(--accent)]" type="checkbox" /> Remember me</label><button type="button" className="min-h-10 rounded-sm px-2 text-accent">Forgot password</button></div> : null}
           {message ? <div className="mt-5 rounded-sm bg-[var(--accent-soft)] p-4 text-sm text-accent">{message}</div> : null}
           {authMode === "register" ? <div className="mt-5 rounded-sm border border-blue-400/30 bg-blue-500/10 p-4 text-sm text-primary">Public registration creates reporter accounts only. Admin accounts are seeded demo users.</div> : null}
           <button className={`${buttonClass} mt-5 w-full bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit">{authMode === "login" ? "Sign In" : authMode === "register" ? "Create Account" : title === "Contact" ? "Send Message" : title}</button>
@@ -1531,13 +1637,15 @@ export function ReporterDashboard({ user = null, summary = { reportCount: 0, rec
     <PortalContent title={user?.name ? `Welcome, ${user.name}` : "My Dashboard"} description="Your submitted reports and available recommendations.">
       <div className="grid gap-5 md:grid-cols-2">
         <StatCard title="My Reports" value={summary.reportCount} />
-        <StatCard title="Recommendations" value={summary.recommendationCount} />
+        <StatCard title="Possible matches" value={summary.recommendationCount} />
       </div>
       <div className="stitch-panel rounded-sm p-6">
-        <SectionHeader title="Dashboard Summary" />
-        <p className="text-sm leading-6 text-muted">Use My Reports to review your submitted cases. Recommendations only show possible similarities for human review and do not confirm identity.</p>
+        <SectionHeader title="What would you like to do?" />
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Link className={`${buttonClass} bg-accent text-white`} href="/reporter/my-reports">View my reports</Link>
+          <Link className={`${buttonClass} border border-[var(--border)] text-primary`} href="/reporter/recommendations">Review possible matches</Link>
+        </div>
       </div>
-      <PrivacyNoticeCard />
     </PortalContent>
   );
 }
@@ -1549,6 +1657,7 @@ export function MyReportsPage({ reportsData = reports }) {
   const [type, setType] = useState("All Types");
   const [editing, setEditing] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [pendingAction, setPendingAction] = useState("");
   const statusOptions = ["All Statuses", ...new Set(caseReports.map((report) => report.status))];
   const typeOptions = ["All Types", ...new Set(caseReports.map((report) => report.type))];
   const normalizedQuery = query.trim().toLowerCase();
@@ -1563,41 +1672,120 @@ export function MyReportsPage({ reportsData = reports }) {
     };
     if (confirmations[action] && !window.confirm(confirmations[action])) return false;
     setActionError("");
-    const response = await fetch(`/api/reports/${report.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...values }) });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) { setActionError(result.error || "Unable to update report."); return false; }
-    const labels = { UNDER_REVIEW: "Report Under Review", CLOSED_BY_REPORTER: "Closed by Reporter", ARCHIVED: "Archived" };
-    setCaseReports((current) => current.map((item) => item.id === report.id ? { ...item, ...result.report, status: labels[result.report.rawStatus] || result.report.status, visibility: result.report.visibility === "LIMITED" ? "Limited" : result.report.visibility === "HIDDEN" ? "Hidden" : result.report.visibility } : item));
-    setEditing(null); return true;
+    if (pendingAction) return false;
+    setPendingAction(`${report.id}:${action}`);
+    try {
+      const result = await requestJson(`/api/reports/${report.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...values }) });
+      const labels = { UNDER_REVIEW: "Report Under Review", CLOSED_BY_REPORTER: "Closed by Reporter", ARCHIVED: "Archived" };
+      setCaseReports((current) => current.map((item) => item.id === report.id ? { ...item, ...result.report, status: labels[result.report.rawStatus] || result.report.status, visibility: result.report.visibility === "LIMITED" ? "Limited" : result.report.visibility === "HIDDEN" ? "Hidden" : result.report.visibility } : item));
+      setEditing(null); return true;
+    } catch (error) {
+      setActionError(error.message); return false;
+    } finally {
+      setPendingAction("");
+    }
+  };
+  const updateAIProcessing = async (report, action) => {
+    if (action === "withdraw" && !window.confirm("Withdraw AI processing permission? Encrypted embeddings will be deleted and AI-assisted recommendations invalidated.")) return;
+    if (action === "enable" && !window.confirm("Enable optional local similarity processing for this report? Suggestions may be wrong, never confirm identity, and require human review.")) return;
+    setActionError("");
+    if (pendingAction) return;
+    setPendingAction(`${report.id}:ai-${action}`);
+    try {
+      const result = await requestJson("/api/ai/processing-basis", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ publicId: report.id, action, acknowledged: action === "enable" }) });
+      setCaseReports((current) => current.map((item) => item.id === report.id ? { ...item, aiProcessingAllowed: result.aiProcessingAllowed, aiProcessingStatus: result.aiProcessingStatus } : item));
+    } catch (error) {
+      setActionError(error.message);
+    } finally {
+      setPendingAction("");
+    }
   };
   return (
-    <PortalContent title="My Cases" description="Search and filter your submitted cases.">
+    <PortalContent title="My reports" description="Review or update the reports you submitted.">
       <FilterBar><SearchInput value={query} onChange={setQuery} placeholder="Search my cases" /><Select value={status} onChange={setStatus} options={statusOptions} label="Status" /><Select value={type} onChange={setType} options={typeOptions} label="Type" /></FilterBar>
       {actionError ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm">{actionError}</div> : null}
-      {filteredReports.length ? <div className="grid gap-5 lg:grid-cols-2">{filteredReports.map((report) => <div key={report.id} className="stitch-panel rounded-sm p-5"><ReportCard report={report} /><div className="mt-4 flex flex-wrap gap-2">{["SUBMITTED", "UNDER_REVIEW", "PUBLIC"].includes(report.rawStatus) ? <button className={`${buttonClass} border border-[var(--border)]`} onClick={() => setEditing({ ...report })}>Edit</button> : null}{!["CLOSED_BY_REPORTER", "ARCHIVED"].includes(report.rawStatus) ? <button className={`${buttonClass} border border-[var(--border)]`} onClick={() => runAction(report, "close")}>Close Case</button> : null}{report.rawStatus !== "ARCHIVED" ? <button className={`${buttonClass} border border-[var(--border)]`} onClick={() => runAction(report, "archive")}><Archive size={16} /> Archive</button> : null}{["CLOSED_BY_REPORTER", "ARCHIVED"].includes(report.rawStatus) ? <button className={`${buttonClass} bg-accent text-white`} onClick={() => runAction(report, "reopen")}>Reopen for Review</button> : null}</div><p className="mt-3 text-sm text-muted">{report.recommendations} Possible Recommendations - Visibility: {report.visibility}</p></div>)}</div> : <EmptyState title="No cases found" description="No submitted case matches the current search and filters." />}
-      {editing ? <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/70 p-4"><form className="my-8 grid w-full max-w-3xl gap-4 rounded-sm border border-[var(--border)] bg-background p-6" onSubmit={(event) => { event.preventDefault(); runAction(editing, "edit", editing); }}><div className="flex justify-between"><h2 className="font-display text-2xl font-bold text-white">Edit {editing.id}</h2><button type="button" onClick={() => setEditing(null)} aria-label="Close edit form"><X /></button></div><div className="grid gap-4 sm:grid-cols-2"><label><span>Name</span><input className={inputClass} value={editing.name || ""} onChange={(e) => setEditing({ ...editing, name: e.target.value, fullName: e.target.value })} /></label><label><span>Age</span><input className={inputClass} value={editing.age || ""} onChange={(e) => setEditing({ ...editing, age: e.target.value, approximateAge: e.target.value })} required /></label><label><span>Height (cm)</span><input className={inputClass} type="number" value={editing.heightCm || ""} onChange={(e) => setEditing({ ...editing, heightCm: Number(e.target.value) })} required /></label><label><span>Weight (kg)</span><input className={inputClass} type="number" value={editing.weightKg || ""} onChange={(e) => setEditing({ ...editing, weightKg: Number(e.target.value) })} required /></label><label><span>Gender</span><select className={inputClass} value={editing.gender || "Not specified"} onChange={(e) => setEditing({ ...editing, gender: e.target.value })}>{["Female", "Male", "Other", "Not specified"].map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Broad region</span><input className={inputClass} value={editing.region || ""} onChange={(e) => setEditing({ ...editing, region: e.target.value, broadRegion: e.target.value })} /></label></div><label><span>Description</span><textarea className={`${inputClass} min-h-28`} value={editing.description || ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} required /></label><div className="rounded-sm bg-deep p-4 text-sm text-muted">Editing a public report returns it to human review. This action does not confirm identity.</div><button className={`${buttonClass} bg-accent text-white`} type="submit">Save and Return to Review</button></form></div> : null}
+      {filteredReports.length ? <div className="grid gap-5 lg:grid-cols-2">{filteredReports.map((report) => {
+        const busy = pendingAction.startsWith(`${report.id}:`);
+        const aiStatus = { WAITING_REVIEW: "Waiting for review", WAITING_VISIBILITY: "Waiting to be published", PENDING: "Checking for matches", AVAILABLE: "Matches ready", LIMITED: "No strong similarities", DISABLED: "Matching is off" }[report.aiProcessingStatus] || "Status unavailable";
+        return <div key={report.id} className="stitch-panel rounded-sm p-5"><ReportCard report={report} /><div className="mt-4 flex flex-wrap gap-2">
+          <a className={`${buttonClass} border border-[var(--border)] text-primary`} href={`/api/reports/${report.id}/photo`} target="_blank" rel="noreferrer">View Private Photo</a>
+          {["SUBMITTED", "UNDER_REVIEW", "PUBLIC"].includes(report.rawStatus) ? <button className={`${buttonClass} border border-[var(--border)]`} onClick={() => setEditing({ ...report })} disabled={busy}>Edit</button> : null}
+          {!["CLOSED_BY_REPORTER", "ARCHIVED"].includes(report.rawStatus) ? <button className={`${buttonClass} border border-[var(--border)]`} onClick={() => runAction(report, "close")} disabled={busy}>Close Report</button> : null}
+          {report.rawStatus !== "ARCHIVED" ? <button className={`${buttonClass} border border-[var(--border)]`} onClick={() => runAction(report, "archive")} disabled={busy}><Archive size={16} /> Archive</button> : null}
+          {["CLOSED_BY_REPORTER", "ARCHIVED"].includes(report.rawStatus) ? <button className={`${buttonClass} bg-accent text-white`} onClick={() => runAction(report, "reopen")} disabled={busy}>Reopen for Review</button> : null}
+          {report.aiProcessingAllowed ? <button className={`${buttonClass} border border-[var(--border)]`} onClick={() => updateAIProcessing(report, "withdraw")} disabled={busy}>Turn off matching</button> : <button className={`${buttonClass} border border-[var(--border)]`} onClick={() => updateAIProcessing(report, "enable")} disabled={busy}>Turn on matching</button>}
+        </div><p className="mt-3 text-sm text-muted">{report.recommendations} possible matches · {report.visibility} · {aiStatus}</p>{busy ? <p className="mt-3 flex items-center gap-2 text-sm text-accent" role="status"><LoaderCircle className="animate-spin" size={16} />Saving report change…</p> : null}</div>;
+      })}</div> : <EmptyState title="No reports found" description="No submitted report matches the current search and filters." />}
+      {editing ? <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="edit-report-title"><form className="my-8 grid w-full max-w-3xl gap-4 rounded-sm border border-[var(--border)] bg-background p-6" onSubmit={(event) => { event.preventDefault(); runAction(editing, "edit", editing); }}><div className="flex justify-between"><h2 id="edit-report-title" className="font-display text-2xl font-bold text-white">Edit {editing.id}</h2><button type="button" onClick={() => setEditing(null)} aria-label="Close edit form" disabled={Boolean(pendingAction)}><X /></button></div><div className="grid gap-4 sm:grid-cols-2"><label><span>Name</span><input className={inputClass} value={editing.name || ""} onChange={(e) => setEditing({ ...editing, name: e.target.value, fullName: e.target.value })} /></label><label><span>Age</span><input className={inputClass} value={editing.age || ""} onChange={(e) => setEditing({ ...editing, age: e.target.value, approximateAge: e.target.value })} required /></label><label><span>Height (cm)</span><input className={inputClass} type="number" min="30" max="260" value={editing.heightCm || ""} onChange={(e) => setEditing({ ...editing, heightCm: Number(e.target.value) })} required /></label><label><span>Weight (kg)</span><input className={inputClass} type="number" min="2" max="300" value={editing.weightKg || ""} onChange={(e) => setEditing({ ...editing, weightKg: Number(e.target.value) })} required /></label><label><span>Gender</span><select className={inputClass} value={editing.gender || "Not specified"} onChange={(e) => setEditing({ ...editing, gender: e.target.value })}>{["Female", "Male", "Other", "Not specified"].map((item) => <option key={item}>{item}</option>)}</select></label><label><span>Broad region</span><input className={inputClass} value={editing.region || ""} onChange={(e) => setEditing({ ...editing, region: e.target.value, broadRegion: e.target.value })} /></label></div><label><span>Description</span><textarea className={`${inputClass} min-h-28`} value={editing.description || ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} required minLength={10} /></label><div className="rounded-sm bg-deep p-4 text-sm text-muted">Editing a public report returns it to human review and invalidates old recommendations. This action does not confirm identity.</div>{actionError ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm" role="alert">{actionError}</div> : null}<button className={`${buttonClass} bg-accent text-white`} type="submit" disabled={Boolean(pendingAction)}>{pendingAction ? <PendingLabel>Saving</PendingLabel> : "Save and Return to Review"}</button></form></div> : null}
     </PortalContent>
   );
 }
 
 export function RecommendationsPage({ recommendationsData = [] }) {
   return (
-    <PortalContent title="Possible Recommendations" description="Review AI-assisted similarity suggestions with human judgment. Suggestions do not confirm identity.">
-      <PrivacyNoticeCard />
+    <PortalContent title="Possible matches" description="Compare the details and decide whether a report may be relevant.">
       <RecommendationResults items={recommendationsData} canManage />
     </PortalContent>
   );
 }
 
 export function ConnectionRequestsPage({ requestsData = connectionRequests }) {
-  const tabs = ["All Requests", "Incoming", "Outgoing", "Accepted", "Declined", "Cancelled"].map((label) => ({
-    id: label,
-    label,
-    content: <div className="grid gap-5">{requestsData.filter((item) => label === "All Requests" || label === item.direction || label === item.status).map((item) => <ConnectionRequestCard key={item.id} request={item} />)}</div>
-  }));
+  const tabs = ["All Requests", "Incoming", "Outgoing", "Accepted", "Declined", "Cancelled"].map((label) => {
+    const filtered = requestsData.filter((item) => label === "All Requests" || label === item.direction || label === item.status);
+    return { id: label, label, content: filtered.length ? <div className="grid gap-5">{filtered.map((item) => <ConnectionRequestCard key={item.id} request={item} />)}</div> : <EmptyState title={`No ${label.toLowerCase()}`} description="No contact requests are available in this category." /> };
+  });
   return (
-    <PortalContent title="Contact Requests" description="Another family member may request contact when a potential match appears relevant. Contact information remains hidden until accepted.">
+    <PortalContent title="Contact requests" description="Accept a request only when you are comfortable sharing your selected contact detail.">
       <ResponsiveTabs tabs={tabs} />
+    </PortalContent>
+  );
+}
+
+export function ClaimReportPage({ initialCaseId = "" }) {
+  const [caseId, setCaseId] = useState(initialCaseId);
+  const [claimCode, setClaimCode] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!caseId) return;
+    const saved = window.sessionStorage.getItem(`humtrace-report-claim:${caseId.toUpperCase()}`);
+    if (saved) setClaimCode(saved);
+  }, [caseId]);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (pending) return;
+    setPending(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await requestJson("/api/reports/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseId, claimCode })
+      });
+      window.sessionStorage.removeItem(`humtrace-report-claim:${result.caseId}`);
+      setMessage(result.message || "Report claimed successfully.");
+    } catch (claimError) {
+      setError(claimError.message);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <PortalContent title="Claim a Public Submission" description="Attach a report submitted without an account to your signed-in reporter profile.">
+      <form className="stitch-panel mx-auto grid w-full max-w-2xl gap-5 rounded-sm p-6" onSubmit={submit}>
+        <div className="rounded-sm border border-blue-400/30 bg-blue-500/10 p-4 text-sm leading-6 text-primary">Enter the case ID and one-time claim code shown after submission. For protection against stolen codes, your signed-in account email must match the reporter email entered on the public form.</div>
+        <label><span className="mb-2 block text-sm font-semibold text-primary">Case ID</span><input className={inputClass} value={caseId} onChange={(event) => setCaseId(event.target.value.toUpperCase())} placeholder="MP-2026-0001" autoComplete="off" required /></label>
+        <label><span className="mb-2 block text-sm font-semibold text-primary">One-time claim code</span><input className={inputClass} value={claimCode} onChange={(event) => setClaimCode(event.target.value.toUpperCase())} placeholder="HTC-XXXX-XXXX-XXXX-XXXX" autoComplete="off" required /></label>
+        <p className="text-sm leading-6 text-muted">After claiming the report, you can manage it, review possible matches and send contact requests.</p>
+        {error ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm" role="alert">{error}</div> : null}
+        {message ? <div className="rounded-sm border border-[var(--success)]/40 bg-[var(--success)]/10 p-4 text-sm" role="status">{message} <Link className="ml-1 text-accent underline" href="/reporter/my-reports">Open My Cases</Link></div> : null}
+        <button className={`${buttonClass} bg-accent text-white`} type="submit" disabled={pending || Boolean(message)}>{pending ? <PendingLabel>Verifying Claim</PendingLabel> : message ? "Report Claimed" : "Claim Report"}</button>
+      </form>
     </PortalContent>
   );
 }
@@ -1612,7 +1800,7 @@ export function ProfilePage({ user = null }) {
           <Info label="Role" value={user?.role || "Reporter"} />
           <Info label="Preferred contact" value={user?.preferredContactMethod || "EMAIL"} />
         </div>
-        <p className="mt-5 text-sm leading-6 text-muted">Profile editing is not part of this phase. Contact information remains hidden unless a connection request is accepted.</p>
+        <p className="mt-5 text-sm leading-6 text-muted">Profile editing is not part of this phase. Contact information remains hidden unless a contact request is accepted.</p>
       </div>
     </PortalContent>
   );
@@ -1620,8 +1808,7 @@ export function ProfilePage({ user = null }) {
 
 export function AdminDashboardPage({ dashboardData = { stats: [], reportsByRegion: [], reportsByMonth: [], acceptanceRate: { value: 0, label: "No reviewed contact requests yet" }, recentActivity: [] } }) {
   return (
-    <PortalContent title="Admin Dashboard" description="Real local database aggregates for moderation and operations review.">
-      <div className="rounded-sm border-l-4 border-accent bg-[var(--accent-soft)] p-5 text-sm text-primary">Admin moderation does not confirm or reject identity. HumTrace AI only generates possible recommendations for reporter review.</div>
+    <PortalContent title="Admin dashboard" description="Review reports, users and recent activity.">
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         {dashboardData.stats.map((item) => <StatCard key={item.title} title={item.title} value={item.value} />)}
       </div>
@@ -1640,31 +1827,31 @@ function AdminSettingsPanel({ initialSettings = {} }) {
     publicSearchEnabled: Boolean(initialSettings.publicSearchEnabled),
     reportSubmissionEnabled: Boolean(initialSettings.reportSubmissionEnabled),
     maintenanceMode: Boolean(initialSettings.maintenanceMode),
-    englishTextEmbeddingEnabled: Boolean(initialSettings.englishTextEmbeddingEnabled),
-    englishTextEmbeddingDevelopmentMode: Boolean(initialSettings.englishTextEmbeddingDevelopmentMode),
-    englishTextEmbeddingThreshold: initialSettings.englishTextEmbeddingThreshold ?? 35,
+    aiAssistanceEnabled: Boolean(initialSettings.aiAssistanceEnabled),
+    faceSimilarityEnabled: Boolean(initialSettings.faceSimilarityEnabled),
+    textSimilarityEnabled: Boolean(initialSettings.textSimilarityEnabled),
     recommendationDisplayThreshold: initialSettings.recommendationDisplayThreshold ?? 0,
     duplicateWarningThreshold: initialSettings.duplicateWarningThreshold ?? 85
   });
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
   const update = (key, value) => setSettings((current) => ({ ...current, [key]: value }));
   const save = async (event) => {
     event.preventDefault();
     setNotice("");
     setError("");
-    const response = await fetch("/api/admin/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(result.error || "Unable to update settings.");
-      return;
+    if (pending) return;
+    setPending(true);
+    try {
+      const result = await requestJson("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings }) });
+      setSettings((current) => ({ ...current, ...result.settings }));
+      setNotice("Settings saved and audited. Running work was safely re-queued or paused when a kill switch changed.");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setPending(false);
     }
-    setSettings(result.settings);
-    setNotice("Settings saved and audited.");
   };
   return (
     <form className="stitch-panel rounded-sm p-6" onSubmit={save}>
@@ -1672,7 +1859,9 @@ function AdminSettingsPanel({ initialSettings = {} }) {
         {[
           ["publicSearchEnabled", "Public search enabled"],
           ["reportSubmissionEnabled", "Report submission enabled"],
-          ["englishTextEmbeddingEnabled", "English text embeddings (development only)"],
+          ["aiAssistanceEnabled", "AI-assisted suggestions enabled"],
+          ["faceSimilarityEnabled", "Face similarity enabled"],
+          ["textSimilarityEnabled", "English text similarity enabled"],
           ["maintenanceMode", "Maintenance mode"]
         ].map(([key, label]) => (
           <label key={key} className="flex min-h-12 items-center gap-3 rounded-sm border border-[var(--border)] bg-deep p-4 text-sm">
@@ -1681,13 +1870,13 @@ function AdminSettingsPanel({ initialSettings = {} }) {
           </label>
         ))}
         <Field label="Recommendation display threshold" type="number" register={{ value: settings.recommendationDisplayThreshold, min: 0, max: 100, onChange: (event) => update("recommendationDisplayThreshold", Number(event.target.value)) }} />
-        <Field label="English text development threshold" type="number" register={{ value: settings.englishTextEmbeddingThreshold, min: 0, max: 100, onChange: (event) => update("englishTextEmbeddingThreshold", Number(event.target.value)) }} />
-        <Field label="Duplicate warning threshold" type="number" register={{ value: settings.duplicateWarningThreshold, min: 0, max: 100, onChange: (event) => update("duplicateWarningThreshold", Number(event.target.value)) }} />
+        <Field label="Reserved duplicate-review threshold" type="number" register={{ value: settings.duplicateWarningThreshold, min: 0, max: 100, onChange: (event) => update("duplicateWarningThreshold", Number(event.target.value)) }} />
       </div>
-      <p className="mt-4 text-sm text-muted">English text embeddings run only when development mode and this setting are both enabled. Evaluation remains deferred. Recommendation thresholds affect which possible similarities are displayed; human review is required.</p>
-      {notice ? <div className="mt-4 rounded-sm border border-[var(--success)]/40 bg-[var(--success)]/10 p-4 text-sm text-primary">{notice}</div> : null}
-      {error ? <div className="mt-4 rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary">{error}</div> : null}
-      <button className={`${buttonClass} mt-5 bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit">Save Settings</button>
+      <p className="mt-4 text-sm text-muted">Recommendation thresholds affect which possible similarities are displayed. They do not confirm identity. These controls can pause approved capabilities but cannot approve a model or determine identity. AI suggestions remain unavailable without development mode or an approved final evaluation. HumTrace never generates images, and human review is required.</p>
+      <p className="mt-2 text-xs text-muted">The duplicate-review threshold is reserved and does not activate an unfinished workflow.</p>
+      {notice ? <div className="mt-4 rounded-sm border border-[var(--success)]/40 bg-[var(--success)]/10 p-4 text-sm text-primary" role="status">{notice}</div> : null}
+      {error ? <div className="mt-4 rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary" role="alert">{error}</div> : null}
+      <button className={`${buttonClass} mt-5 bg-accent text-white hover:bg-[var(--red-dark)]`} type="submit" disabled={pending}>{pending ? <PendingLabel>Saving Settings</PendingLabel> : "Save Settings"}</button>
     </form>
   );
 }
@@ -1696,6 +1885,7 @@ export function AdminManagePage({ manageData = { reports, users: [], auditLogs: 
   const [adminReports, setAdminReports] = useState(manageData.reports);
   const [adminUsers, setAdminUsers] = useState(manageData.users || []);
   const [adminError, setAdminError] = useState("");
+  const [pendingAdminAction, setPendingAdminAction] = useState("");
   const [reportQuery, setReportQuery] = useState("");
   const [reportType, setReportType] = useState("All Types");
   const [reportVisibility, setReportVisibility] = useState("All Visibility");
@@ -1710,35 +1900,35 @@ export function AdminManagePage({ manageData = { reports, users: [], auditLogs: 
   });
   const updateReportStatus = async (report, status) => {
     setAdminError("");
-    const response = await fetch(`/api/reports/${report.id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ status })
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      setAdminError(result.error || "Unable to update report.");
-      return;
+    if (pendingAdminAction) return;
+    const humanReviewAcknowledged = status === "PUBLIC" ? window.confirm("Confirm that you reviewed the report details and private photo, found them appropriate for limited public display, and understand this does not confirm identity.") : true;
+    if (!humanReviewAcknowledged) return;
+    if (["HIDDEN", "ARCHIVED"].includes(status) && !window.confirm(`${status === "HIDDEN" ? "Hide" : "Archive"} this report and cancel its pending contact requests?`)) return;
+    setPendingAdminAction(`report:${report.id}`);
+    try {
+      const result = await requestJson(`/api/reports/${report.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, humanReviewAcknowledged }) });
+      const statusLabel = result.status === "PUBLIC" ? "Content Review Completed" : result.status === "HIDDEN" ? "Hidden" : result.status === "ARCHIVED" ? "Archived" : "Report Under Review";
+      const visibilityLabel = result.visibility === "PUBLIC" ? "Public" : result.visibility === "HIDDEN" ? "Hidden" : "Limited";
+      setAdminReports((current) => current.map((item) => item.id === report.id ? { ...item, status: statusLabel, visibility: visibilityLabel } : item));
+    } catch (error) {
+      setAdminError(error.message);
+    } finally {
+      setPendingAdminAction("");
     }
-    const statusLabel = result.status === "PUBLIC" ? "Content Review Completed" : result.status === "HIDDEN" ? "Hidden" : result.status === "ARCHIVED" ? "Archived" : "Report Under Review";
-    const visibilityLabel = result.visibility === "PUBLIC" ? "Public" : result.visibility === "HIDDEN" ? "Hidden" : "Limited";
-    setAdminReports((current) => current.map((item) => item.id === report.id ? { ...item, status: statusLabel, visibility: visibilityLabel } : item));
   };
   const updateUserStatus = async (user, action) => {
     setAdminError("");
-    const response = await fetch(`/api/admin/users/${user.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setAdminError(result.error || "Unable to update user.");
-      return;
+    if (pendingAdminAction) return;
+    if (action === "deactivate" && !window.confirm("Deactivate this account and revoke its active sessions?")) return;
+    setPendingAdminAction(`user:${user.id}`);
+    try {
+      const result = await requestJson(`/api/admin/users/${user.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      setAdminUsers((current) => current.map((item) => item.id === user.id ? result.user : item));
+    } catch (error) {
+      setAdminError(error.message);
+    } finally {
+      setPendingAdminAction("");
     }
-    setAdminUsers((current) => current.map((item) => item.id === user.id ? result.user : item));
   };
   const reportColumns = [
     { key: "id", label: "Report ID" },
@@ -1746,8 +1936,9 @@ export function AdminManagePage({ manageData = { reports, users: [], auditLogs: 
     { key: "region", label: "Broad Region" },
     { key: "date", label: "Submitted Date" },
     { key: "visibility", label: "Visibility" },
+    { key: "publicVisibilityRequested", label: "Reporter Public Request", render: (row) => row.publicVisibilityRequested ? "Yes" : "No" },
     { key: "status", label: "Moderation Status" },
-    { key: "actions", label: "Actions", render: (row) => <div className="flex flex-wrap gap-2"><button className="text-accent" onClick={() => updateReportStatus(row, "PUBLIC")}>Make Public</button><button className="text-accent" onClick={() => updateReportStatus(row, "UNDER_REVIEW")}>Restore to Review</button><button className="text-accent" onClick={() => updateReportStatus(row, "HIDDEN")}>Hide</button><button className="text-accent" onClick={() => updateReportStatus(row, "ARCHIVED")}>Archive</button></div> }
+    { key: "actions", label: "Actions", render: (row) => <div className="flex flex-wrap gap-2"><a className="min-h-11 rounded-sm px-3 py-3 text-accent" href={`/api/reports/${row.id}/photo`} target="_blank" rel="noreferrer">Review Private Photo</a><button className="min-h-11 rounded-sm px-3 text-accent" onClick={() => updateReportStatus(row, "PUBLIC")} disabled={Boolean(pendingAdminAction) || !row.publicVisibilityRequested} title={!row.publicVisibilityRequested ? "Reporter did not request public visibility" : ""}>Make Public</button><button className="min-h-11 rounded-sm px-3 text-accent" onClick={() => updateReportStatus(row, "UNDER_REVIEW")} disabled={Boolean(pendingAdminAction)}>Restore to Review</button><button className="min-h-11 rounded-sm px-3 text-accent" onClick={() => updateReportStatus(row, "HIDDEN")} disabled={Boolean(pendingAdminAction)}>Hide</button><button className="min-h-11 rounded-sm px-3 text-accent" onClick={() => updateReportStatus(row, "ARCHIVED")} disabled={Boolean(pendingAdminAction)}>Archive</button></div> }
   ];
   const userColumns = [
     { key: "name", label: "User Account" },
@@ -1761,8 +1952,8 @@ export function AdminManagePage({ manageData = { reports, users: [], auditLogs: 
       label: "Actions",
       render: (row) => (
         <div className="flex flex-wrap gap-2">
-          <button className="text-accent" onClick={() => updateUserStatus(row, "activate")} disabled={row.status === "Active"}>Activate</button>
-          <button className="text-accent" onClick={() => updateUserStatus(row, "deactivate")} disabled={row.status === "Deactivated"}>Deactivate</button>
+          <button className="min-h-11 rounded-sm px-3 text-accent" onClick={() => updateUserStatus(row, "activate")} disabled={row.status === "Active" || Boolean(pendingAdminAction)}>Activate</button>
+          <button className="min-h-11 rounded-sm px-3 text-accent" onClick={() => updateUserStatus(row, "deactivate")} disabled={row.status === "Deactivated" || Boolean(pendingAdminAction)}>Deactivate</button>
         </div>
       )
     }
@@ -1785,7 +1976,8 @@ export function AdminManagePage({ manageData = { reports, users: [], auditLogs: 
   ];
   return (
     <PortalContent title="Admin Manage" description="Reports, Users, Audit Logs, and Settings are consolidated into one responsive management page.">
-      {adminError ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary">{adminError}</div> : null}
+      {adminError ? <div className="rounded-sm border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-4 text-sm text-primary" role="alert">{adminError}</div> : null}
+      {pendingAdminAction ? <div className="flex items-center gap-2 rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted" role="status"><LoaderCircle className="animate-spin text-accent" size={16} />Saving administrative change…</div> : null}
       <ResponsiveTabs tabs={[
         { id: "reports", label: "Reports", content: <div className="grid gap-5"><FilterBar><SearchInput value={reportQuery} onChange={setReportQuery} placeholder="Search reports" /><Select value={reportType} onChange={setReportType} options={["All Types", ...new Set(adminReports.map((report) => report.type))]} label="Report type" /><Select value={reportVisibility} onChange={setReportVisibility} options={["All Visibility", ...new Set(adminReports.map((report) => report.visibility))]} label="Visibility" /><Select value={reportStatus} onChange={setReportStatus} options={["All Statuses", ...new Set(adminReports.map((report) => report.status))]} label="Moderation status" /></FilterBar><DataTable columns={reportColumns} rows={filteredAdminReports} /></div> },
         { id: "recommendations", label: "Recommendations", content: <div className="grid gap-5"><div className="rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted">Admin can review recommendation quality labels and statuses, but cannot confirm identity or force contact.</div><DataTable columns={recommendationColumns} rows={manageData.recommendations || []} /></div> },
@@ -1802,13 +1994,20 @@ export function AdminStaffPage({ initialStaff = [] }) {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
   const submit = async (event) => {
     event.preventDefault(); setError(""); setMessage("");
-    const response = await fetch("/api/admin/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) return setError(result.error || "Unable to create staff account.");
-    setStaff((current) => [{ ...result.staff, createdAt: new Date().toISOString() }, ...current]);
-    setForm({ name: "", email: "", password: "" }); setMessage("Admin staff account created and audited.");
+    if (pending) return;
+    setPending(true);
+    try {
+      const result = await requestJson("/api/admin/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      setStaff((current) => [{ ...result.staff, createdAt: new Date().toISOString() }, ...current]);
+      setForm({ name: "", email: "", password: "" }); setMessage("Admin staff account created and audited.");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setPending(false);
+    }
   };
   return <PortalContent title="Admin Staff" description="Create and review authenticated Admin accounts. Public registration cannot grant this role.">
     <form className="stitch-panel grid gap-4 rounded-sm p-6 md:grid-cols-3" onSubmit={submit}>
@@ -1817,7 +2016,7 @@ export function AdminStaffPage({ initialStaff = [] }) {
       <label><span className="mb-2 block text-sm font-semibold">Temporary password</span><input className={inputClass} type="password" minLength={10} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label>
       <div className="md:col-span-3 rounded-sm border border-[var(--border)] bg-deep p-4 text-sm text-muted">Share the temporary password securely. Staff should sign in at <span className="text-accent">/admin/login</span>.</div>
       {error ? <div className="md:col-span-3 text-sm text-[var(--danger)]">{error}</div> : null}{message ? <div className="md:col-span-3 text-sm text-[var(--success)]">{message}</div> : null}
-      <button className={`${buttonClass} bg-accent text-white md:col-span-3`} type="submit">Create Admin Staff</button>
+      <button className={`${buttonClass} bg-accent text-white md:col-span-3`} type="submit" disabled={pending}>{pending ? <PendingLabel>Creating Staff</PendingLabel> : "Create Admin Staff"}</button>
     </form>
     <div className="grid gap-3">{staff.map((item) => <div className="stitch-panel flex flex-col justify-between gap-2 rounded-sm p-5 sm:flex-row" key={item.id}><div><p className="font-semibold text-white">{item.name}</p><p className="text-sm text-muted">{item.email}</p></div><StatusBadge status={item.status === "ACTIVE" ? "Active" : "Deactivated"} /></div>)}</div>
   </PortalContent>;
@@ -1829,12 +2028,12 @@ export function Content({ children, narrow = false }) {
 
 function PortalContent({ title, description, children }) {
   return (
-    <div className="min-h-screen min-w-0 flex-1 overflow-x-hidden bg-background lg:ml-0">
+    <main className="min-h-screen min-w-0 flex-1 overflow-x-hidden bg-background lg:ml-0">
       <div className="mx-auto grid min-w-0 max-w-[1320px] gap-7 px-5 pb-14 pt-20 sm:px-8 lg:pt-7">
-        <PageHeader eyebrow="HumTrace AI" title={title} description={description} />
+        <PageHeader eyebrow="HumTrace" title={title} description={description} />
         {children}
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -1876,23 +2075,23 @@ function Select({ value, onChange, options, label }) {
   );
 }
 
-function Field({ label, register = {}, error, type = "text" }) {
+function Field({ label, register = {}, error, type = "text", required = false }) {
   const id = useId();
   return (
     <label htmlFor={id}>
-      <span className="mb-2 block text-sm font-semibold text-primary">{label}</span>
-      <input id={id} className={inputClass} type={type} {...register} />
+      <span className="mb-2 block text-sm font-semibold text-primary">{label}{required ? <RequiredMark /> : null}</span>
+      <input id={id} className={inputClass} type={type} required={required} aria-required={required} {...register} />
       <ErrorText text={error} />
     </label>
   );
 }
 
-function SelectField({ label, register = {}, error, options }) {
+function SelectField({ label, register = {}, error, options, required = false }) {
   const id = useId();
   return (
     <label htmlFor={id}>
-      <span className="mb-2 block text-sm font-semibold text-primary">{label}</span>
-      <select id={id} className={inputClass} {...register}>
+      <span className="mb-2 block text-sm font-semibold text-primary">{label}{required ? <RequiredMark /> : null}</span>
+      <select id={id} className={inputClass} required={required} aria-required={required} {...register}>
         <option value="">Select</option>
         {options.map((option) => <option key={option}>{option}</option>)}
       </select>

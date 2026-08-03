@@ -2,32 +2,29 @@
 
 ## 1. Status and objective
 
-Status: Phase 5 proposed; not implemented.
+Status: Phase 5 local engineering implemented; user-visible activation remains disabled pending final evaluation.
 
-The objective is to retrieve possible recommendations using separate visual, textual, and structured similarity signals while preserving privacy, retention, explainability, and human control.
+The implemented scope is English-only all-MiniLM-L6-v2 text similarity and separately switchable DeepFace FaceNet similarity. General visual and multilingual models are not included. HumTrace never generates, synthesizes, edits, or enhances images.
 
-## 2. Staged capability
+The objective is to retrieve possible recommendations using separate face-pattern, English-text, and structured similarity signals while preserving privacy, retention, explainability, and human control.
 
-### Phase 5A
+## 2. Implemented capability
 
-- Multilingual text embedding for free-form descriptions.
-- General visual embedding for clothing, appearance, and non-identity visual characteristics.
-- Existing structured age, height, weight, gender, location, and date comparisons.
-- Evaluation, model registry, encryption, retention, feedback, suppression, and kill switches.
-
-### Phase 5B
-
-- Optional face-region similarity.
-- Disabled by default.
-- Requires separate processing-policy approval, model/license review, dataset review, demographic and quality evaluation, and threshold approval.
+- English description embedding with local all-MiniLM-L6-v2.
+- Face-pattern embedding with local DeepFace FaceNet when exactly one usable face is detected.
+- Structured age, gender, height, weight, and location comparisons.
+- Separate settings for AI assistance, face similarity, and text similarity.
+- Model registry, authenticated encryption, expiry, invalidation, suppression, quality flags, retention worker, and kill switches.
+- Development mode for the local thesis demo; committed defaults remain release-gated pending the consented held-out pilot.
+- No general visual/clothing image model, multilingual embedding model, image generation, or identity confirmation.
 
 ## 3. Signal design
 
 | Input | Processing | Persistence |
 |---|---|---|
-| Report photograph | Quality checks plus approved visual model | Encrypted report embedding while eligible |
-| Smart Search photograph | Quality checks plus approved visual model | None; bytes and query vector are request-scoped |
-| Description, clothing, identifying features | Normalization plus multilingual text embedding | Encrypted report embedding; query vector request-scoped |
+| Report photograph | Decode/size/face-count checks plus FaceNet | Encrypted report face embedding while eligible |
+| Smart Search photograph | Decode/size/face-count checks plus FaceNet | None; bytes and query vector are request-scoped |
+| Description, clothing, identifying features | English check, normalization, all-MiniLM-L6-v2 | Encrypted report text embedding; query vector request-scoped |
 | Age, height, weight | Numeric distance functions | Source fields already stored; no embedding |
 | Gender | Exact/unknown-aware structured comparison | Source field already stored |
 | Region and location | Normalized structured/text similarity | No separate sensitive vector unless approved |
@@ -43,10 +40,9 @@ flowchart TD
     Policy{"Eligible processing basis?"}
     Quality["Image quality and suitability checks"]
     Text["Text normalization and embedding"]
-    Visual["General visual embedding"]
-    Face["Optional face-region embedding<br/>Phase 5B only"]
+    Face["Face-pattern embedding<br/>when enabled and usable"]
     Structured["Structured feature preparation"]
-    Retrieve["Retrieve opposite-type eligible candidates"]
+    Retrieve["Retrieve eligible missing and unidentified candidates"]
     Score["Calibrated modality scoring<br/>normalize available weights"]
     Suppress["Apply suppression, lifecycle,<br/>visibility, and retention filters"]
     Threshold{"Approved threshold met?"}
@@ -60,11 +56,9 @@ flowchart TD
     Policy -->|No| Structured
     Policy -->|Yes| Quality
     Quality --> Text
-    Quality --> Visual
-    Quality -. "separate gate" .-> Face
+    Quality --> Face
     Structured --> Retrieve
     Text --> Retrieve
-    Visual --> Retrieve
     Face --> Retrieve
     Retrieve --> Score
     Score --> Suppress
@@ -79,12 +73,12 @@ flowchart TD
 ## 5. Report processing
 
 1. The web application validates and stores the report and private photograph.
-2. The report remains under human content review.
-3. Once policy eligibility is satisfied, an idempotent AI job is queued.
+2. The reporter's public or limited visibility choice is applied immediately; no admin pre-approval is required.
+3. Once consent, visibility, release-gate, and model eligibility are satisfied, an idempotent AI job is queued.
 4. The worker loads the private image by trusted report-photo identifier, not a browser-supplied path.
 5. The inference service returns quality signals and approved embeddings.
 6. The worker encrypts report embeddings before persistence.
-7. Candidate retrieval compares only eligible opposite-type reports.
+7. Candidate retrieval compares all other eligible public missing and unidentified reports, excluding the source report itself.
 8. Recommendations include model/scoring versions, modality contributions, expiry, and safe explanations.
 9. Report edit or lifecycle change invalidates dependent results.
 
@@ -95,21 +89,22 @@ flowchart TD
 3. Keep image bytes in memory.
 4. Generate request-scoped vectors.
 5. Retrieve eligible public candidates without exposing their photographs or embeddings.
-6. Return up to five public-safe suggestions.
+6. Return up to ten public-safe suggestions, displayed five at a time.
 7. Discard image bytes, vectors, intermediate crops, and temporary inference objects on success, error, or timeout.
-8. Log only safe request outcome, latency category, and anonymous error code.
+8. Log only safe request outcome, latency category, and opaque error code.
 
 ## 7. Candidate eligibility
 
 A report is eligible only when all required conditions are true:
 
-- Opposite report type.
+- Missing or unidentified report type; both same-type and cross-type candidates are allowed.
+- Not the source report itself.
 - Active lifecycle.
-- Public visibility and completed human content review for user-facing retrieval.
+- Public visibility selected by the reporter and not subsequently restricted by moderation.
 - Not hidden, closed, archived, expired, or deleted.
 - Valid approved processing basis for every applied modality.
 - Current embeddings for an approved enabled model.
-- Not the source report and not blocked by suppression.
+- Not blocked by suppression.
 
 ## 8. Quality gates
 
@@ -133,12 +128,7 @@ Failure behavior:
 
 ## 9. Scoring and calibration
 
-Each modality produces a calibrated similarity component:
-
-- S_visual
-- S_text
-- S_structured
-- S_face only when Phase 5B is enabled
+The implemented additive policy has seven signals: face, age, gender, height, weight, location, and description. Unavailable signals are excluded and the remaining configured weights are normalized. Face and English-text signals are independently switchable.
 
 The combination policy shall:
 
@@ -147,7 +137,7 @@ The combination policy shall:
 3. Apply quality-dependent caps.
 4. Apply eligibility and suppression filters.
 5. Use a threshold tied to a recorded evaluation run and gallery size.
-6. Limit results to five.
+6. Limit stored/search results to ten and display five at a time.
 
 The displayed score is a ranking aid, not identity certainty. The interface should emphasize signal categories and limitations over a single number.
 
@@ -181,7 +171,7 @@ Every result must be traceable to model artifact checksum, model version, prepro
 
 ## 12. Human review and false-positive handling
 
-- Show why a suggestion appeared: visual, text, and structured contribution categories.
+- Show why a suggestion appeared: face-pattern, text, and structured contribution categories.
 - Show image-quality limitations.
 - Require an acknowledgment before creating contact from an AI-assisted suggestion.
 - Allow dismiss, suppress, and flag actions with reasons.
@@ -191,7 +181,7 @@ Every result must be traceable to model artifact checksum, model version, prepro
 
 ## 13. Service boundary
 
-The proposed inference service:
+The implemented inference service:
 
 - Binds only to 127.0.0.1.
 - Accepts an internal credential and request identifier.
@@ -212,4 +202,3 @@ No capability becomes user-visible until:
 5. Privacy, authorization, zero-retention, encryption, and deletion tests pass.
 6. Existing Phase 1–4.5 checks pass.
 7. A global disable path is verified.
-

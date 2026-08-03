@@ -55,7 +55,7 @@ async function multipartReport({ cookie, overrides = {} } = {}) {
     reporterContext: "",
     relationshipContext: "",
     preferredContactMethod: "EMAIL",
-    publicVisible: "false",
+    publicVisible: "true",
     photoConfirm: "true",
     consent: "true",
     ...overrides
@@ -95,15 +95,40 @@ async function main() {
   assert.equal(submitted.response.status, 200, "report submission should succeed");
   assert(/^MP-\d{4}-\d{4}$/.test(submitted.data.caseId), "missing report should return a case ID");
   assert(Array.isArray(submitted.data.recommendations), "report submission should return recommendations array");
-  assert(submitted.data.recommendations.length > 0, "report submission should generate at least one public-safe possible recommendation");
-  assert(submitted.data.recommendations.length <= 10, "report submission should return no more than 10 recommendations");
+  assert(submitted.data.recommendations.length <= 5, "report submission should return no more than five immediate recommendations");
+
+  const storedSubmitted = await prisma.report.findUnique({ where: { publicId: submitted.data.caseId } });
+  assert.equal(storedSubmitted.status, "PUBLIC", "a reporter-requested public report should publish without admin pre-approval");
+  assert.equal(storedSubmitted.visibility, "PUBLIC", "a reporter-requested public report should be publicly visible immediately");
+  assert.equal(storedSubmitted.publicVisible, true, "public visibility choice should be preserved");
 
   const serialized = JSON.stringify(submitted.data.recommendations);
   for (const forbidden of ["storagePath", "reporter@", "phone", "auditLogs", "passwordHash"]) {
     assert(!serialized.includes(forbidden), `public recommendation response leaked ${forbidden}`);
   }
 
-  const recommendationId = submitted.data.recommendations[0].id;
+  const sameTypeSubmitted = await multipartReport({
+    cookie: reporterCookie,
+    overrides: { name: "Same Type Candidate" }
+  });
+  assert.equal(sameTypeSubmitted.response.status, 200, "second same-type report submission should succeed");
+  assert(
+    sameTypeSubmitted.data.recommendations.some((item) => item.similarReportId === submitted.data.caseId),
+    "a new missing report should be compared with eligible public missing reports as well as unidentified reports"
+  );
+
+  let recommendationId = submitted.data.recommendations[0]?.id;
+  if (!recommendationId) {
+    const source = await prisma.report.findUnique({ where: { publicId: submitted.data.caseId } });
+    const target = await prisma.report.findUnique({ where: { publicId: "UI-2026-0001" } });
+    const row = await prisma.recommendation.upsert({
+      where: { sourceReportId_targetReportId: { sourceReportId: source.id, targetReportId: target.id } },
+      update: { score: 70, qualityLabel: "Possible similarity", sharedAttributes: "[]", breakdownSummary: "[]", scoringVersion: "phase4-workflow-validation", invalidatedAt: null, status: "NEW" },
+      create: { sourceReportId: source.id, targetReportId: target.id, score: 70, qualityLabel: "Possible similarity", sharedAttributes: "[]", breakdownSummary: "[]", scoringVersion: "phase4-workflow-validation", status: "NEW" }
+    });
+    recommendationId = row.id;
+  }
+  const submittedId = submitted.data.caseId;
   const viewed = await jsonRequest(`/api/recommendations/${recommendationId}`, {
     method: "PATCH",
     cookie: reporterCookie,
@@ -128,7 +153,7 @@ async function main() {
   const contact = await jsonRequest(`/api/recommendations/${recommendationId}`, {
     method: "PATCH",
     cookie: reporterCookie,
-    body: { action: "request_contact", message: "Please review this possible recommendation for family follow-up." }
+    body: { action: "request_contact", message: "Please review this possible recommendation for family follow-up.", humanReviewAcknowledged: true }
   });
   assert.equal(contact.response.status, 200, "owner should request contact from recommendation");
   assert.equal(contact.data.status, "CONTACT_REQUESTED", "recommendation status should become contact requested");
@@ -137,13 +162,70 @@ async function main() {
   const recommendation = await prisma.recommendation.findUnique({ where: { id: recommendationId } });
   assert.equal(recommendation.status, "CONTACT_REQUESTED", "recommendation status should persist");
 
-  const submittedId = submitted.data.caseId;
-  await prisma.report.update({
-    where: { publicId: submittedId },
-    data: { status: "PUBLIC", visibility: "PUBLIC", publicVisible: true }
+  const sourceReport = await prisma.report.findUnique({ where: { publicId: submittedId } });
+  const actionNames = ["dismiss", "suppress", "flag"];
+  const actionRecommendations = [];
+  for (let index = 0; index < actionNames.length; index += 1) {
+    const suffix = 9001 + index;
+    const targetReport = await prisma.report.create({
+      data: {
+        publicId: `UI-2026-${suffix}`,
+        type: "UNIDENTIFIED",
+        reporterId: "user_second_reporter",
+        nameUnknown: true,
+        approximateAge: "30",
+        broadRegion: "Sindh",
+        description: `Clearly fictional recommendation ${actionNames[index]} workflow target.`,
+        status: "PUBLIC",
+        visibility: "PUBLIC",
+        publicVisible: true,
+        consentToContact: true
+      }
+    });
+    actionRecommendations.push(await prisma.recommendation.create({
+      data: {
+        sourceReportId: sourceReport.id,
+        targetReportId: targetReport.id,
+        score: 50 + index,
+        qualityLabel: "Possible similarity",
+        sharedAttributes: "[]",
+        breakdownSummary: "[]",
+        scoringVersion: "phase5-action-workflow",
+        status: "NEW"
+      }
+    }));
+  }
+
+  const dismissed = await jsonRequest(`/api/recommendations/${actionRecommendations[0].id}`, { method: "PATCH", cookie: reporterCookie, body: { action: "dismiss" } });
+  assert.equal(dismissed.response.status, 200, "owner should dismiss a recommendation");
+  const dismissedContact = await jsonRequest(`/api/recommendations/${actionRecommendations[0].id}`, { method: "PATCH", cookie: reporterCookie, body: { action: "request_contact", message: "A dismissed suggestion must not start contact.", humanReviewAcknowledged: true } });
+  assert.equal(dismissedContact.response.status, 409, "dismissed recommendation should not start contact");
+
+  const suppressed = await jsonRequest(`/api/recommendations/${actionRecommendations[1].id}`, { method: "PATCH", cookie: reporterCookie, body: { action: "suppress", reason: "Not relevant to this fictional workflow" } });
+  assert.equal(suppressed.response.status, 200, "owner should suppress a recommendation pair");
+  assert(await prisma.suppressedPair.findFirst({ where: { sourceReportId: sourceReport.id, targetReportId: actionRecommendations[1].targetReportId } }), "suppression should persist");
+
+  const flagged = await jsonRequest(`/api/recommendations/${actionRecommendations[2].id}`, { method: "PATCH", cookie: reporterCookie, body: { action: "flag", reason: "Quality concern", notes: "Clearly fictional workflow note." } });
+  assert.equal(flagged.response.status, 200, "owner should flag a recommendation for operational review");
+  assert(await prisma.recommendationFeedback.findFirst({ where: { recommendationId: actionRecommendations[2].id, action: "FLAG" } }), "quality flag should persist");
+
+  const reciprocal = await prisma.recommendation.create({
+    data: {
+      sourceReportId: actionRecommendations[2].targetReportId,
+      targetReportId: sourceReport.id,
+      score: 52,
+      qualityLabel: "Possible similarity",
+      sharedAttributes: "[]",
+      breakdownSummary: "[]",
+      scoringVersion: "phase5-action-workflow",
+      status: "NEW"
+    }
   });
+  const reciprocalViewed = await jsonRequest(`/api/recommendations/${reciprocal.id}`, { method: "PATCH", cookie: secondLogin.cookie, body: { action: "view" } });
+  assert.equal(reciprocalViewed.response.status, 200, "reciprocal recommendation should be manageable by the other report owner");
 
   const unidentified = await multipartReport({
+    cookie: secondLogin.cookie,
     overrides: {
       type: "unidentified",
       name: "",

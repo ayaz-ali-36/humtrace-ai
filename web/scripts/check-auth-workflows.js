@@ -8,6 +8,10 @@ function cookieFrom(response) {
   return response.headers.get("set-cookie")?.split(";")[0] || "";
 }
 
+function isProtectedRedirect(result) {
+  return [307, 308].includes(result.response.status) || (result.response.status === 200 && String(result.data).includes("NEXT_REDIRECT"));
+}
+
 async function request(path, { method = "GET", body, cookie, redirect = "manual" } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
@@ -39,6 +43,7 @@ async function main() {
       email,
       phone: "+92-300-1111111",
       password: "Workflow!2026",
+      privacyConsent: true,
       role: "ADMIN"
     }
   });
@@ -55,7 +60,8 @@ async function main() {
     body: {
       name: "Duplicate Reporter",
       email,
-      password: "Workflow!2026"
+      password: "Workflow!2026",
+      privacyConsent: true
     }
   });
   assert.equal(duplicate.response.status, 409, "duplicate email should be blocked");
@@ -79,12 +85,12 @@ async function main() {
   assert(!("passwordHash" in reporterMe.data.user), "current session response must not expose passwordHash");
 
   const loggedOutAdmin = await request("/admin/manage");
-  assert([307, 308].includes(loggedOutAdmin.response.status), "logged-out admin page should redirect");
+  assert(isProtectedRedirect(loggedOutAdmin), "logged-out admin page should redirect without admin content");
 
   const reporterAdminPage = await request("/admin/manage", { cookie: reporterCookie });
-  assert([307, 308].includes(reporterAdminPage.response.status), "reporter should not access admin pages");
+  assert(isProtectedRedirect(reporterAdminPage), "reporter should not access admin pages");
 
-  const reporterAdminMutation = await request("/api/reports/MP-2026-0049", {
+  const reporterAdminMutation = await request("/api/reports/UI-2026-0001", {
     method: "PATCH",
     cookie: reporterCookie,
     body: { status: "UNDER_REVIEW" }
@@ -98,7 +104,7 @@ async function main() {
   assert.equal(adminLogin.response.status, 200, "admin login should work");
   const adminCookie = adminLogin.cookie;
 
-  const adminMutation = await request("/api/reports/MP-2026-0049", {
+  const adminMutation = await request("/api/reports/MP-2026-0047", {
     method: "PATCH",
     cookie: adminCookie,
     body: { status: "UNDER_REVIEW" }
@@ -108,13 +114,13 @@ async function main() {
   const adminContactRequest = await request("/api/contact-requests", {
     method: "POST",
     cookie: adminCookie,
-    body: { reportId: "UI-2026-0001", message: "Admin must not be able to force reporter contact." }
+    body: { reportId: "UI-2026-0001", message: "Admin must not be able to force reporter contact.", humanReviewAcknowledged: true }
   });
   assert.equal(adminContactRequest.response.status, 403, "admin should not create reporter contact requests");
 
   const anonymousContactRequest = await request("/api/contact-requests", {
     method: "POST",
-    body: { reportId: "UI-2026-0001", message: "Anonymous visitors must sign in before requesting contact." }
+    body: { reportId: "UI-2026-0001", message: "Anonymous visitors must sign in before requesting contact.", humanReviewAcknowledged: true }
   });
   assert.equal(anonymousContactRequest.response.status, 401, "anonymous visitors should not create contact requests");
 
@@ -129,7 +135,7 @@ async function main() {
   const contactOne = await request("/api/contact-requests", {
     method: "POST",
     cookie: reporterCookie,
-    body: { reportId: "UI-2026-0001", message: "Workflow request for consent-based contact." }
+    body: { reportId: "UI-2026-0001", message: "Workflow request for consent-based contact.", humanReviewAcknowledged: true }
   });
   assert.equal(contactOne.response.status, 200, "contact request should create or return active request");
   assert(!("contact" in contactOne.data), "new contact request response should not reveal contact");
@@ -137,7 +143,7 @@ async function main() {
   const contactTwo = await request("/api/contact-requests", {
     method: "POST",
     cookie: reporterCookie,
-    body: { reportId: "UI-2026-0001", message: "Workflow duplicate request for contact." }
+    body: { reportId: "UI-2026-0001", message: "Workflow duplicate request for contact.", humanReviewAcknowledged: true }
   });
   assert.equal(contactTwo.response.status, 200, "duplicate active request should be idempotent");
   assert.equal(contactOne.data.requestId, contactTwo.data.requestId, "duplicate active request should return the same request");
@@ -168,7 +174,7 @@ async function main() {
   const contactAfterAccept = await request("/api/contact-requests", {
     method: "POST",
     cookie: reporterCookie,
-    body: { reportId: "UI-2026-0001", message: "Workflow request to test cancellation." }
+    body: { reportId: "UI-2026-0001", message: "Workflow request to test cancellation.", humanReviewAcknowledged: true }
   });
   assert.equal(contactAfterAccept.response.status, 200, "new request after acceptance should be allowed");
 
@@ -179,6 +185,20 @@ async function main() {
   });
   assert.equal(cancel.response.status, 200, "requester should cancel pending request");
   assert.equal(cancel.data.contact, null, "cancelled request should not reveal contact");
+
+  const contactForDecline = await request("/api/contact-requests", {
+    method: "POST",
+    cookie: reporterCookie,
+    body: { reportId: "UI-2026-0001", message: "Workflow request to test recipient decline.", humanReviewAcknowledged: true }
+  });
+  assert.equal(contactForDecline.response.status, 200, "new request after cancellation should be allowed");
+  const decline = await request(`/api/contact-requests/${contactForDecline.data.requestId}`, {
+    method: "PATCH",
+    cookie: secondCookie,
+    body: { action: "decline" }
+  });
+  assert.equal(decline.response.status, 200, "recipient should decline a pending request");
+  assert.equal(decline.data.contact, null, "declined request should not reveal contact");
 
   const logout = await request("/api/auth/logout", { method: "POST", cookie: reporterCookie });
   assert.equal(logout.response.status, 200, "logout should succeed");

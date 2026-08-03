@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "HumTrace AI",
-  description: "Privacy-preserving UI foundation for possible report recommendations."
+  title: "HumTrace",
+  description: "Report missing or unidentified people and review possible matches."
 };
 
 export default function RootLayout({ children }) {

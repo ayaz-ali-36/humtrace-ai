@@ -1,6 +1,11 @@
 import crypto from "crypto";
 
-function encryptionKey() {
+function configuredKeyId() {
+  return process.env.HUMTRACE_EMBEDDING_KEY_ID || "local-v1";
+}
+
+function encryptionKey(keyId = configuredKeyId()) {
+  if (keyId !== configuredKeyId()) throw new Error("EMBEDDING_KEY_ID_UNKNOWN");
   const value = process.env.HUMTRACE_EMBEDDING_KEY || "";
   if (!/^[a-f0-9]{64}$/i.test(value)) throw new Error("EMBEDDING_KEY_INVALID");
   return Buffer.from(value, "hex");
@@ -12,15 +17,18 @@ function vectorBuffer(vector) {
   return buffer;
 }
 
-export function encryptVector(vector) {
+export function encryptVector(vector, aad = "") {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const keyId = configuredKeyId();
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(keyId), iv);
+  if (aad) cipher.setAAD(Buffer.from(aad));
   const ciphertext = Buffer.concat([cipher.update(vectorBuffer(vector)), cipher.final()]);
-  return { ciphertext, iv, authTag: cipher.getAuthTag() };
+  return { ciphertext, iv, authTag: cipher.getAuthTag(), keyId };
 }
 
-export function decryptVector(record) {
-  const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(record.iv));
+export function decryptVector(record, aad = "") {
+  const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(record.keyId || "local-v1"), Buffer.from(record.iv));
+  if (aad) decipher.setAAD(Buffer.from(aad));
   decipher.setAuthTag(Buffer.from(record.authTag));
   const plaintext = Buffer.concat([decipher.update(Buffer.from(record.ciphertext)), decipher.final()]);
   if (plaintext.length !== record.dimensions * 4) throw new Error("EMBEDDING_DIMENSION_MISMATCH");

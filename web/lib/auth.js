@@ -8,6 +8,12 @@ import { ROLES, SESSION_COOKIE, USER_STATUS } from "@/lib/auth-constants";
 
 const sessionDays = 7;
 
+function shouldUseSecureCookies() {
+  if (process.env.HUMTRACE_SECURE_COOKIES === "true") return true;
+  if (process.env.HUMTRACE_SECURE_COOKIES === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -32,7 +38,7 @@ export function normalizeEmail(email) {
 
 export function safeReturnTo(value, fallback = "/reporter/dashboard") {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return fallback;
-  if (value.includes("://")) return fallback;
+  if (value.includes("://") || value.includes("\\") || /[\u0000-\u001f\u007f]/.test(value)) return fallback;
   return value;
 }
 
@@ -52,7 +58,7 @@ export async function createSession(userId) {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookies(),
     expires: expiresAt
   });
 }
@@ -93,9 +99,9 @@ export async function requireUser() {
   return user;
 }
 
-export async function requireReporter() {
+export async function requireReporter(returnTo = "/reporter/dashboard") {
   const user = await getCurrentUser();
-  if (!user) redirect(`/login?returnTo=${encodeURIComponent("/reporter/dashboard")}`);
+  if (!user) redirect(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   if (user.role !== ROLES.REPORTER) redirect("/");
   return user;
 }

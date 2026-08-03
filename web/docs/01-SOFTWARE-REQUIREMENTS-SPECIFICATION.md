@@ -5,8 +5,8 @@
 Product: HumTrace AI  
 System type: Privacy-preserving local demonstration  
 Geographic context: Pakistan  
-Current release: Phase 4.5  
-Next planned release: Phase 5, subject to design approval
+Current release: Phase 5 local engineering demonstration
+Normal AI activation: not approved pending representative consented evaluation and calibration
 
 ## 2. Purpose
 
@@ -31,11 +31,10 @@ The product assists people in finding relevant reports. It never makes an identi
 - Admin content review, hide, restore-to-review, public visibility, archive, and user activation controls.
 - Audit logs, notifications, timeline events, and persisted system settings.
 
-### 3.2 Phase 5 proposed scope
+### 3.2 Phase 5 engineering scope
 
-- Local multilingual text embeddings.
-- Local general visual embeddings for appearance and clothing similarity.
-- Optional face-region similarity only behind a separate approval gate.
+- Local English text embeddings.
+- Optional local face-region similarity behind independent configuration and release gates.
 - Encrypted persisted report embeddings and zero-retention query embeddings.
 - Background processing and backfill for eligible reports.
 - Vector candidate retrieval, calibrated scoring, and model versioning.
@@ -57,7 +56,7 @@ The product assists people in finding relevant reports. It never makes an identi
 
 | Actor | Responsibilities |
 |---|---|
-| Public visitor | Browse public-safe cases, track a public case, use Smart Search, submit a report |
+| Public visitor | Browse public-safe reports, track a public report, and use Smart Search |
 | Reporter | Own reports, review recommendations, manage report lifecycle, send or review contact requests |
 | Contact recipient | Accept or decline a contact request and control contact disclosure |
 | Admin | Moderate content, manage users/settings/staff, review operational quality and audit history |
@@ -79,21 +78,25 @@ The product assists people in finding relevant reports. It never makes an identi
 | FR-AUTH-006 | The admin login shall reject non-admin credentials. | Implemented |
 | FR-AUTH-007 | Only an active admin shall create another admin staff account. | Implemented |
 | FR-AUTH-008 | The last active admin shall not be deactivated. | Implemented |
+| FR-AUTH-009 | A public submitter shall claim a report only with its one-time code and an account using the submitted email. | Implemented |
+| FR-AUTH-010 | Repeated invalid claim attempts shall trigger a temporary lock. | Implemented |
 
 ### 5.2 Reports and photographs
 
 | ID | Requirement | Status |
 |---|---|---|
 | FR-RPT-001 | The system shall accept missing-person and unidentified-person reports. | Implemented |
-| FR-RPT-002 | A report shall require core descriptive details, reporter details, a valid image, confirmation, and consent. | Implemented |
+| FR-RPT-002 | A report shall require core descriptive details, private reporter contact details, a valid image, confirmation, and consent; an account is optional at submission. | Implemented |
 | FR-RPT-003 | Images shall be limited to JPG, PNG, or WEBP and 5 MB. | Implemented |
 | FR-RPT-004 | Declared image type shall agree with file signature. | Implemented |
 | FR-RPT-005 | Stored images shall remain under private storage/reports paths. | Implemented |
-| FR-RPT-006 | Anonymous submissions shall create a separate anonymous local reporter and shall not claim an existing account by typed email. | Implemented |
+| FR-RPT-006 | A signed-in reporter submission shall attach immediately; a public submission shall remain unowned until securely claimed. | Implemented |
 | FR-RPT-007 | A reporter shall access and mutate only reports they own. | Implemented |
-| FR-RPT-008 | Editing a public report shall return it to limited visibility and human review. | Implemented |
+| FR-RPT-008 | Editing a reporter-owned public report shall preserve the reporter's public visibility choice without admin pre-approval. | Implemented |
 | FR-RPT-009 | Closed and archived reports shall be removed from public visibility. | Implemented |
-| FR-RPT-010 | Reopened reports shall return to human review before public visibility. | Implemented |
+| FR-RPT-010 | Reopened reports shall restore the reporter's saved public or limited visibility choice without admin pre-approval. | Implemented |
+| FR-RPT-011 | Unclaimed reports shall not receive or initiate report-linked contact actions. | Implemented |
+| FR-RPT-012 | Admin moderation shall occur after submission and may hide, limit, archive, review, or republish saved reports. | Implemented |
 
 ### 5.3 Public views and tracking
 
@@ -108,7 +111,7 @@ The product assists people in finding relevant reports. It never makes an identi
 
 | ID | Requirement | Status |
 |---|---|---|
-| FR-REC-001 | The system shall compare eligible opposite-type reports. | Implemented with deterministic scoring |
+| FR-REC-001 | The system shall compare a report with all other eligible public missing and unidentified reports, regardless of type, while excluding itself. | Implemented with deterministic scoring |
 | FR-REC-002 | Recommendations shall use uncertainty-preserving labels and explanations. | Implemented |
 | FR-REC-003 | A reporter shall view or dismiss a recommendation for their own source report. | Implemented |
 | FR-REC-004 | A reporter shall provide a reason before requesting contact from a recommendation. | Implemented |
@@ -130,18 +133,18 @@ The product assists people in finding relevant reports. It never makes an identi
 
 | ID | Requirement | Status |
 |---|---|---|
-| FR-AI-001 | Every enabled model shall have a name, version, checksum, license, purpose, and evaluation approval. | Phase 5 proposed |
-| FR-AI-002 | Search-image bytes and query embeddings shall be discarded after the request. | Phase 5 proposed |
-| FR-AI-003 | Persisted embeddings shall be encrypted and inaccessible from public APIs. | Phase 5 proposed |
-| FR-AI-004 | Image, text, and structured signals shall be scored separately before calibrated combination. | Phase 5 proposed |
-| FR-AI-005 | Missing signals shall be excluded and remaining weights normalized. | Phase 5 proposed |
-| FR-AI-006 | An image-quality failure shall cause a safe fallback rather than an unreliable image score. | Phase 5 proposed |
-| FR-AI-007 | Candidate eligibility shall require active lifecycle, approved visibility, compatible report type, and approved AI-processing basis. | Phase 5 proposed |
-| FR-AI-008 | No more than five candidate recommendations shall be displayed per search or generation event. | Phase 5 proposed |
-| FR-AI-009 | Report edit, closure, archive, deletion, permission withdrawal, photo change, or model change shall invalidate affected derived data. | Phase 5 proposed |
-| FR-AI-010 | Reporters shall be able to dismiss, suppress, and flag an inappropriate suggestion with a reason. | Phase 5 proposed |
-| FR-AI-011 | A global switch shall disable AI-assisted recommendations without disabling reporting or tracking. | Phase 5 proposed |
-| FR-AI-012 | Face-region similarity shall remain independently disabled until its separate evaluation gate is approved. | Phase 5 proposed |
+| FR-AI-001 | Every normally enabled model shall have a name, version, checksum, license, purpose, exact-version approval, and evaluation approval. | Engineering implemented; release approval pending |
+| FR-AI-002 | Search-image bytes and query embeddings shall be discarded after the request. | Implemented |
+| FR-AI-003 | Persisted embeddings shall be encrypted, versioned, expiring, and inaccessible from public APIs. | Implemented |
+| FR-AI-004 | Face, text, and structured signals shall be scored separately before calibrated combination. | Engineering implemented; calibration pending |
+| FR-AI-005 | Missing signals shall be excluded and remaining weights normalized. | Implemented |
+| FR-AI-006 | An image-quality failure shall cause a safe fallback rather than an unreliable image score. | Implemented |
+| FR-AI-007 | Candidate eligibility shall require active lifecycle, approved visibility, a non-self missing or unidentified report, and approved AI-processing basis. | Implemented |
+| FR-AI-008 | Up to ten candidate recommendations shall be retained per report or search, displayed five at a time with Previous/Next navigation. | Phase 5 implemented |
+| FR-AI-009 | Report edit, closure, archive, deletion, permission withdrawal, photo change, or model/policy change shall invalidate affected derived data. | Implemented for current report lifecycle |
+| FR-AI-010 | Reporters shall be able to dismiss, suppress, and flag an inappropriate suggestion with a reason. | Implemented |
+| FR-AI-011 | A global switch shall disable AI-assisted recommendations without disabling reporting or tracking. | Implemented |
+| FR-AI-012 | Face-region similarity shall remain independently disabled until its exact model and evaluation gate is approved. | Implemented gate; approval pending |
 
 ## 6. Non-functional requirements
 
@@ -194,7 +197,7 @@ The product assists people in finding relevant reports. It never makes an identi
 ## 7. Core business rules
 
 1. A recommendation is a lead for human review, not an identity decision.
-2. Only opposite-type cases are eligible for report-to-report similarity.
+2. Both missing and unidentified cases are eligible for report-to-report similarity; a report never compares with itself.
 3. Public responses use allowlisted fields.
 4. Public report visibility does not make the report photograph public.
 5. Contact disclosure requires an accepted request from the receiving reporter.
@@ -221,4 +224,3 @@ These durations are design defaults and require project approval before implemen
 - No Phase 5 capability is enabled by merely installing a model.
 - A feature flag, approved model record, approved evaluation run, configured threshold, and retention policy are all required.
 - Existing lint, build, route, privacy-language, upload, authorization, public-report, and Phase 1–4.5 workflow checks continue to pass.
-

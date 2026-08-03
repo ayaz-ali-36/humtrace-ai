@@ -1,0 +1,8 @@
+{
+  "evaluationId": "phase5-local-engineering-2026-07-15",
+  "scoringVersion": "phase5-additive-1",
+  "galleryScope": "not available",
+  "models": ["deepface-facenet", "sentence-transformers-all-MiniLM-L6-v2"],
+  "formalReleaseEvaluation": false,
+  "reason": "No representative separately consented labeled face-pair dataset is present."
+}

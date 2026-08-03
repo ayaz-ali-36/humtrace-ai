@@ -15,6 +15,7 @@ const routes = [
   "app/register/page.js",
   "app/reporter/dashboard/page.js",
   "app/reporter/my-reports/page.js",
+  "app/reporter/claim-report/page.js",
   "app/reporter/recommendations/page.js",
   "app/reporter/connection-requests/page.js",
   "app/reporter/profile/page.js",
@@ -40,9 +41,10 @@ function walk(dir) {
   }
 }
 walk(path.join(root, "app"));
-if (pageFiles.length !== 19) {
-  console.error(`Expected exactly 19 page.js files, found ${pageFiles.length}.`);
+const expectedPageCount = routes.filter((route) => route.endsWith("page.js")).length;
+if (pageFiles.length !== expectedPageCount) {
+  console.error(`Expected exactly ${expectedPageCount} page.js files, found ${pageFiles.length}.`);
   process.exit(1);
 }
 
-console.log("Route check passed: 19 pages and health route present.");
+console.log(`Route check passed: ${expectedPageCount} pages and health route present.`);

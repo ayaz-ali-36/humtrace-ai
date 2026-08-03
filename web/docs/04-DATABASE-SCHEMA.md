@@ -13,7 +13,7 @@ The database stores relational metadata. Original report photographs are filesys
 
 ### 2.1 User
 
-Purpose: Reporter and admin accounts, including anonymous local reporter records.
+Purpose: Authenticated reporter and admin accounts.
 
 | Field | Type | Constraints / meaning |
 |---|---|---|
@@ -21,7 +21,7 @@ Purpose: Reporter and admin accounts, including anonymous local reporter records
 | name | String | Display name |
 | email | String | Unique normalized email |
 | phone | String? | Private phone |
-| passwordHash | String? | bcrypt hash; absent for some anonymous records |
+| passwordHash | String? | bcrypt hash; nullable only for legacy compatibility |
 | role | String | REPORTER or ADMIN; default REPORTER |
 | status | String | ACTIVE or DEACTIVATED; default ACTIVE |
 | region | String? | Optional broad region |
@@ -50,7 +50,7 @@ Purpose: Missing-person or unidentified-person case.
 
 | Field group | Fields |
 |---|---|
-| Identity | id, publicId, type, reporterId |
+| Identity | id, publicId, type, reporterId (nullable until a public submission is claimed) |
 | Person description | fullName, nameUnknown, approximateAge, gender, heightCm, weightKg |
 | Location/time | broadRegion, specificLocation, lastSeenLocation, foundLocation, eventDate |
 | Descriptive detail | description, clothing, identifyingFeatures, medicalCondition |
@@ -67,6 +67,12 @@ Important constraints:
 - visibility is LIMITED, PUBLIC, or HIDDEN in current workflows.
 - publicVisible and visibility are jointly checked in public queries.
 - Indexes exist on type, status, visibility, and broadRegion.
+
+### 2.3.1 ReportClaim
+
+Purpose: Private ownership-verification record for a report submitted without an account.
+
+The table stores a unique report reference, SHA-256 claim-code hash, private submitter name/email/phone, preferred contact method, failed-attempt/temporary-lock state, and optional claimedById/claimedAt values. The plaintext claim code is returned once and is never stored. A successful claim requires the same submitted email and transfers Report.reporterId to the authenticated reporter.
 
 ### 2.4 ReportPhoto
 
@@ -182,13 +188,13 @@ stateDiagram-v2
     HIDDEN --> UNDER_REVIEW: admin restores to review
 ~~~
 
-## 4. Phase 5 proposed schema changes
+## 4. Phase 5 schema
 
-These changes require a reviewed Prisma migration.
+These entities and fields are present in the current Prisma schema and migration history. Release approval remains a separate operational gate.
 
 ### 4.1 AIModel
 
-Stores model capability, artifact identity, version, checksum, license, status, evaluation approval, and activation dates. Only APPROVED and ENABLED records can produce user-visible recommendations.
+Stores model capability, artifact identity, version, checksum, license, status, evaluation approval, and activation dates. Normal activation requires an exact-version `RELEASE_APPROVED` model and approved evaluation run.
 
 ### 4.2 AIProcessingBasis
 
@@ -211,10 +217,10 @@ Raw vectors must never appear in normal API serialization.
 
 ### 4.4 AIJob
 
-Provides idempotent queued work:
+Provides idempotent leased queued work:
 
-- EMBED_REPORT, REEMBED_REPORT, INVALIDATE_REPORT, RETENTION_DELETE, and BACKFILL.
-- PENDING, RUNNING, SUCCEEDED, RETRYABLE, and FAILED states.
+- Current worker jobs process an eligible report and regenerate its derived suggestions.
+- PENDING, WAITING_REVIEW, WAITING_CONFIG, RUNNING, SUCCEEDED, RETRYABLE, FAILED, and CANCELLED states.
 - attempt count, safe error code, timing, modelId, and idempotency key.
 
 ### 4.5 EvaluationRun
@@ -223,7 +229,7 @@ Records model/dataset/scoring versions, metrics, slice results, threshold propos
 
 ### 4.6 Recommendation additions
 
-Proposed fields:
+Implemented fields include:
 
 - modelVersion and scoringVersion.
 - modalityScoresJson and explanationJson.
@@ -248,6 +254,5 @@ Records scheduled and completed deletion outcomes without retaining deleted cont
 3. Register model metadata without enabling it.
 4. Backfill only reports with approved eligibility and processing basis.
 5. Verify encrypted round-trip and deletion before any recommendation generation.
-6. Preserve existing Phase 4.5 recommendations until an explicit replacement policy is approved.
+6. Invalidate stale recommendations when report content, lifecycle, consent, model, or policy changes.
 7. Provide a rollback that disables AI features without deleting current reports.
-

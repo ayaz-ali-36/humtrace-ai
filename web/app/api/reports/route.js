@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser, normalizeEmail } from "@/lib/auth";
-import { CONTACT_METHOD, ROLES } from "@/lib/auth-constants";
+import { getCurrentUser } from "@/lib/auth";
+import { ROLES } from "@/lib/auth-constants";
 import { prisma } from "@/lib/prisma";
-import { generateRecommendationsForReport } from "@/lib/recommendations";
+import { enqueueReportAI } from "@/lib/ai/jobs";
+import { createClaimCode, hashClaimCode } from "@/lib/report-claims";
 import { validateReportPayload } from "@/lib/report-validation";
 import { getSettings } from "@/lib/settings";
+import { generateRecommendationsForReport } from "@/lib/recommendations";
 import { deleteStoredReportPhoto, saveReportPhotoFile, validateImageFile } from "@/lib/upload-storage";
 
 export const runtime = "nodejs";
@@ -59,6 +61,9 @@ export async function POST(request) {
       return NextResponse.json({ error: "Report submission is temporarily unavailable." }, { status: 503 });
     }
 
+    const currentUser = await getCurrentUser();
+    const currentReporter = currentUser?.role === ROLES.REPORTER ? currentUser : null;
+
     const formData = await request.formData();
     const photoFile = formData.get("photo");
     const body = Object.fromEntries(formData.entries());
@@ -67,9 +72,15 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid report type." }, { status: 400 });
     }
 
-    const validated = validateReportPayload({ ...body, type: clean(body.type) });
+    const validated = validateReportPayload({
+      ...body,
+      type: clean(body.type),
+      reporterName: currentReporter?.name || body.reporterName,
+      reporterEmail: currentReporter?.email || body.reporterEmail,
+      reporterPhone: currentReporter?.phone || body.reporterPhone || "",
+      preferredContactMethod: currentReporter?.preferredContactMethod || body.preferredContactMethod
+    });
     const photoError = validateImageFile(photoFile);
-    const currentUser = await getCurrentUser();
 
     if (!validated.ok) {
       return NextResponse.json({ error: validated.error }, { status: 400 });
@@ -79,8 +90,8 @@ export async function POST(request) {
     }
 
     const values = validated.data;
-    const reporterEmail = normalizeEmail(values.reporterEmail);
     const publicId = await nextPublicId(config.prefix);
+    const claimCode = currentReporter ? null : createClaimCode();
     let storedPhoto;
     try {
       storedPhoto = await saveReportPhotoFile({ file: photoFile, publicId });
@@ -94,24 +105,21 @@ export async function POST(request) {
     let result;
     try {
       result = await prisma.$transaction(async (tx) => {
-      const reporter = currentUser?.role === ROLES.REPORTER
-        ? await tx.user.findUnique({ where: { id: currentUser.id } })
-        : await tx.user.create({
-            data: {
-              name: values.reporterName || "Demo Reporter",
-              email: `anonymous-${publicId.toLowerCase()}@humtrace.local`,
-              phone: values.reporterPhone,
-              role: ROLES.REPORTER,
-              region: values.region || null,
-              preferredContactMethod: values.preferredContactMethod || CONTACT_METHOD.EMAIL
-            }
-          });
+      const reporter = currentReporter
+        ? await tx.user.findUnique({ where: { id: currentReporter.id } })
+        : null;
+      if (currentReporter && !reporter) throw new Error("AUTHENTICATED_REPORTER_NOT_FOUND");
 
+      const initialVisibility = values.publicVisible ? "PUBLIC" : "LIMITED";
+      const initialStatus = values.publicVisible ? "PUBLIC" : "SUBMITTED";
+      const initialAIStatus = values.aiProcessingConsent
+        ? values.publicVisible ? "PENDING" : "WAITING_VISIBILITY"
+        : "DISABLED";
       const report = await tx.report.create({
         data: {
           publicId,
           type: config.dbType,
-          reporterId: reporter.id,
+          reporterId: reporter?.id || null,
           fullName: config.dbType === "MISSING" ? values.name : values.name || null,
           nameUnknown: config.dbType === "UNIDENTIFIED" && !values.name,
           approximateAge: values.age,
@@ -133,13 +141,14 @@ export async function POST(request) {
           preferredContactMethod: values.preferredContactMethod,
           publicVisible: values.publicVisible,
           lifecycleStatus: "ACTIVE",
-          status: "SUBMITTED",
-          visibility: "LIMITED",
+          status: initialStatus,
+          visibility: initialVisibility,
           consentToContact: values.consent === "true",
           aiProcessingAllowed: values.aiProcessingConsent,
-          aiProcessingPolicyVersion: values.aiProcessingConsent ? "phase5-development-1" : null,
+          aiProcessingPolicyVersion: values.aiProcessingConsent ? "phase5-local-1" : null,
           aiProcessingAllowedAt: values.aiProcessingConsent ? new Date() : null,
-          photoRequirementNote: "Reporter confirmed the image is a human face/person image. Automated computer-vision validation is not implemented yet."
+          aiProcessingStatus: initialAIStatus,
+          photoRequirementNote: "Reporter confirmed the image is relevant. It remains private while consented recommendation processing and later administrative moderation stay separately controlled."
         }
       });
 
@@ -150,7 +159,7 @@ export async function POST(request) {
           storagePath: storedPhoto.storagePath,
           mimeType: clean(photoFile.type),
           fileSizeBytes: storedPhoto.fileSizeBytes,
-          reviewStatus: "PENDING",
+          reviewStatus: "SELF_CONFIRMED",
           faceCheckStatus: "NOT_RUN"
         }
       });
@@ -159,50 +168,74 @@ export async function POST(request) {
         data: {
           reportId: report.id,
           title: "Report submitted",
-          description: "Report details and the local image file were saved for human review."
+          description: values.publicVisible
+            ? "Report details were saved and entered the public recommendation workflow."
+            : "Report details were saved with limited visibility."
         }
       });
 
-      await tx.notification.create({
-        data: {
-          userId: reporter.id,
-          reportId: report.id,
-          title: "Report submitted",
-          message: `Case ${publicId} was saved for human review.`
-        }
-      });
+      if (!reporter) {
+        await tx.reportClaim.create({
+          data: {
+            reportId: report.id,
+            tokenHash: hashClaimCode(claimCode),
+            submitterName: values.reporterName,
+            submitterEmail: values.reporterEmail.toLowerCase(),
+            submitterPhone: values.reporterPhone,
+            preferredContactMethod: values.preferredContactMethod
+          }
+        });
+      } else {
+        await tx.notification.create({
+          data: {
+            userId: reporter.id,
+            reportId: report.id,
+            title: "Report submitted",
+            message: values.publicVisible
+              ? `Case ${publicId} was saved and entered the recommendation workflow.`
+              : `Case ${publicId} was saved with limited visibility.`
+          }
+        });
+      }
 
       await tx.auditLog.create({
         data: {
-          userId: reporter.id,
+          userId: reporter?.id || null,
           reportId: report.id,
           action: "Report created",
           resource: publicId,
-          status: currentUser ? "Submitted by authenticated reporter" : `Submitted anonymously; typed email not used for ownership${reporterEmail ? ` (${reporterEmail})` : ""}`
+          status: reporter ? "Submitted by authenticated reporter" : "Public submission awaiting secure account claim"
         }
       });
 
-      return report;
+      if (report.aiProcessingAllowed) {
+        await enqueueReportAI(tx, report, values.publicVisible ? "PENDING" : "WAITING_VISIBILITY");
+      }
+
+      const recommendations = await generateRecommendationsForReport(report.id, tx);
+      return { report, recommendations: recommendations.slice(0, 5) };
       });
     } catch (error) {
       await deleteStoredReportPhoto(storedPhoto.storagePath);
       throw error;
     }
 
-    let recommendations = [];
-    try {
-      recommendations = await generateRecommendationsForReport(result.id);
-    } catch (error) {
-      console.error("Recommendation generation failed", error);
-    }
-
     return NextResponse.json({
       ok: true,
-      caseId: result.publicId,
-      status: result.status,
-      recommendations,
-      recommendationNotice: recommendations.length ? "Possible recommendations generated for human review." : "No public-safe possible recommendations are available yet. You can explore public cases while review continues.",
-      message: "Report and local photo file saved for human review."
+      caseId: result.report.publicId,
+      status: result.report.status,
+      claimCode,
+      ownership: currentReporter ? "ACCOUNT_OWNED" : "AWAITING_CLAIM",
+      recommendations: result.recommendations,
+      aiProcessingStatus: result.report.aiProcessingStatus,
+      recommendationNotice: result.recommendations.length
+        ? `Possible matches are shown below.${claimCode ? " Sign in with the submitted email and claim this report to manage them." : ""}`
+        : result.report.aiProcessingStatus === "PENDING"
+          ? `We are checking for possible matches.${claimCode ? " Sign in and claim this report to review them later." : " They will appear in your account."}`
+          : "No possible matches are available yet. Your report was saved.",
+      message: claimCode
+        ? "Report and photograph saved. Keep the one-time claim code to manage the report after signing in."
+        : "Report and photograph saved."
     });
   } catch (error) {
     console.error(error);

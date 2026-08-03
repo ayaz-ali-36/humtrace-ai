@@ -1,6 +1,6 @@
 # Entity-Relationship Diagram
 
-## 1. Current Phase 4.5 data model
+## 1. Current Phase 5 data model
 
 ~~~mermaid
 erDiagram
@@ -29,7 +29,7 @@ erDiagram
         string id PK
         string publicId UK
         string type
-        string reporterId FK
+        string reporterId FK "nullable until claimed"
         string fullName
         boolean nameUnknown
         string approximateAge
@@ -47,6 +47,19 @@ erDiagram
         boolean consentToContact
         datetime createdAt
         datetime updatedAt
+    }
+    REPORT_CLAIM {
+        string id PK
+        string reportId FK,UK
+        string tokenHash UK
+        string submitterName
+        string submitterEmail
+        string submitterPhone
+        string preferredContactMethod
+        int failedAttempts
+        datetime lockedUntil
+        string claimedById FK
+        datetime claimedAt
     }
     REPORT_PHOTO {
         string id PK
@@ -120,7 +133,9 @@ erDiagram
     }
 
     USER ||--o{ SESSION : has
-    USER ||--o{ REPORT : submits
+    USER |o--o{ REPORT : owns_after_signin_or_claim
+    USER |o--o{ REPORT_CLAIM : verifies
+    REPORT ||--o| REPORT_CLAIM : protects_public_submission
     USER ||--o{ NOTIFICATION : receives
     USER ||--o{ AUDIT_LOG : performs
     USER ||--o{ SYSTEM_SETTING : updates
@@ -136,9 +151,9 @@ erDiagram
     REPORT ||--o{ AUDIT_LOG : relates_to
 ~~~
 
-## 2. Phase 5 proposed extension
+## 2. Phase 5 AI extension
 
-The following entities are a design proposal and are not present in the current Prisma schema.
+The following entities are present in the current Prisma schema. Normal model activation remains subject to the evaluation gate.
 
 ~~~mermaid
 erDiagram
@@ -264,4 +279,3 @@ erDiagram
 - Report photos and timeline events are deleted with their report.
 - Phase 5 embeddings must identify the exact source report, source photo where applicable, and model.
 - A Phase 5 recommendation must be invalidated when its inputs, model, scoring policy, eligibility, or retention state changes.
-

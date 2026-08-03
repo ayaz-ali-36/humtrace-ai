@@ -3,26 +3,26 @@
 @tailwind utilities;
 
 :root {
-  --navy: #1A1A2E;
-  --navy-2: #16213E;
-  --navy-3: #0D1B2A;
-  --red: #E94560;
-  --red-dark: #C73652;
+  --navy: #f6f7f4;
+  --navy-2: #eef2ef;
+  --navy-3: #ffffff;
+  --red: #176b5b;
+  --red-dark: #10584b;
   --white: #FFFFFF;
-  --gray-400: #9AA0A6;
-  --success: #27AE60;
-  --warning: #F39C12;
-  --danger: #E74C3C;
+  --gray-400: #667085;
+  --success: #21855f;
+  --warning: #a85d00;
+  --danger: #b42318;
   --background: var(--navy);
   --surface-deep: var(--navy-3);
   --surface: var(--navy-2);
-  --surface-elevated: #1d2948;
-  --surface-high: #243253;
-  --text-primary: var(--white);
+  --surface-elevated: #ffffff;
+  --surface-high: #dfe8e3;
+  --text-primary: #1f2937;
   --text-muted: var(--gray-400);
   --accent: var(--red);
-  --accent-soft: rgba(233, 69, 96, 0.14);
-  --border: rgba(255, 255, 255, 0.12);
+  --accent-soft: rgba(23, 107, 91, 0.10);
+  --border: rgba(31, 41, 55, 0.14);
 }
 
 * {
@@ -35,13 +35,10 @@ html {
 
 body {
   margin: 0;
-  background:
-    linear-gradient(rgba(233, 69, 96, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(233, 69, 96, 0.018) 1px, transparent 1px),
-    var(--background);
-  background-size: 32px 32px;
+  background: var(--background);
   color: var(--text-primary);
   font-family: var(--font-body), "DM Sans", system-ui, sans-serif;
+  text-rendering: optimizeLegibility;
 }
 
 a {
@@ -66,7 +63,7 @@ textarea {
 
 ::selection {
   background: var(--accent-soft);
-  color: white;
+  color: var(--text-primary);
 }
 
 .surface-border {
@@ -75,8 +72,8 @@ textarea {
 
 .stitch-panel {
   border: 1px solid var(--border);
-  background: rgba(16, 32, 52, 0.78);
-  box-shadow: inset 0 1px 0 rgba(211, 228, 254, 0.04);
+  background: var(--surface-deep);
+  box-shadow: 0 12px 32px rgba(31, 41, 55, 0.06);
 }
 
 .stitch-label {
@@ -89,10 +86,9 @@ textarea {
 }
 
 .stitch-title {
-  color: #e7f0ff;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+  color: var(--text-primary);
+  font-weight: 750;
+  letter-spacing: -0.025em;
   overflow-wrap: anywhere;
   word-break: normal;
 }
@@ -102,11 +98,22 @@ textarea {
 }
 
 .noise {
-  background-image:
-    radial-gradient(circle at center, rgba(233, 69, 96, 0.1) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 28px 28px, 56px 56px, 56px 56px;
+  background:
+    radial-gradient(circle at 82% 18%, rgba(23, 107, 91, 0.12), transparent 28%),
+    linear-gradient(180deg, #fbfcfa 0%, var(--background) 100%);
+}
+
+/* Legacy utility usage now follows the calmer light public-service palette. */
+.text-white {
+  color: var(--text-primary);
+}
+
+.bg-accent.text-white {
+  color: #ffffff;
+}
+
+.rounded-sm {
+  border-radius: 0.75rem;
 }
 
 .mobile-data-cards {

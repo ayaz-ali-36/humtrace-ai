@@ -13,6 +13,8 @@ const pieces = [
   ["AI", "Verified", "Identity"],
   ["Biometric", "Match"],
   ["High-Confidence", "Match"],
+  ["High", "Confidence"],
+  ["Potential", "Match"],
   ["Verified", "Personnel"],
   ["Verified", "Reporter"],
   ["Invest", "igator"],
@@ -44,7 +46,7 @@ function walk(dir) {
     if (entry.isFile() && exts.has(path.extname(entry.name))) {
       const text = fs.readFileSync(full, "utf8");
       terms.forEach((term) => {
-        if (text.includes(term)) findings.push(`${path.relative(root, full)} -> ${term}`);
+        if (text.toLowerCase().includes(term.toLowerCase())) findings.push(`${path.relative(root, full)} -> ${term}`);
       });
     }
   }

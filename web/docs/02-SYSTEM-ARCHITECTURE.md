@@ -4,7 +4,7 @@
 
 HumTrace AI uses a privacy-first modular architecture. The current local demo keeps the web application, database, and private files on one machine. Phase 5 adds local inference and derived-data controls while preserving the existing authorization and consent boundaries.
 
-## 2. Current Phase 4.5 architecture
+## 2. Current Phase 5 engineering architecture
 
 ~~~mermaid
 flowchart LR
@@ -73,10 +73,10 @@ flowchart LR
 | SQLite | Users, reports, recommendations, requests, events, settings, audit | Implemented |
 | Private file storage | Original report photographs | Implemented |
 | Deterministic scorer | Age, gender, height, weight, location, description token scoring | Implemented |
-| AI job worker | Asynchronous report embedding, retries, invalidation, retention work | Phase 5 proposed |
-| Inference service | Approved local text/image embedding and quality inference | Phase 5 proposed |
-| Encrypted embedding store | Model-versioned report vectors | Phase 5 proposed |
-| Evaluation harness | Offline metrics, slices, thresholds, release artifacts | Phase 5 proposed |
+| AI job worker | Asynchronous report embedding, leases, retries, invalidation, and reciprocal suggestions | Implemented |
+| Inference service | Approved local text/face embedding, cosine similarity, quality checks, and scoring | Implemented; normal activation gated |
+| Encrypted embedding store | Encrypted, versioned, expiring report vectors | Implemented |
+| Evaluation harness | Offline metrics, slices, thresholds, and release artifacts | Implemented; representative dataset evaluation pending |
 
 ## 5. Logical layers
 
@@ -172,7 +172,7 @@ flowchart TB
 
 ### Current local demo
 
-One Windows host runs Node.js, Next.js, Prisma, SQLite, and private image storage. The production build is served locally on port 3010.
+One Windows host runs Node.js, Next.js, Prisma, SQLite, and private image storage. The local production build normally runs on port 3000.
 
 ### Phase 5 local demo
 
@@ -180,9 +180,8 @@ The same host may run a separate Python inference process and worker. They remai
 
 ## 10. Architecture decisions requiring review
 
-1. Approve Phase 5A general visual and multilingual text embeddings before face-region similarity.
-2. Select local model families only after license and evaluation review.
-3. Approve application-level encryption and key-handling approach.
-4. Approve retention periods and deletion grace behavior.
-5. Decide whether report-photo replacement is included in Phase 5.
-
+1. Complete and review the approximately 50-volunteer consented pilot before any normal activation.
+2. Review FaceNet weight provenance and the exact local model artifacts before release.
+3. Review application-level encryption and operational key handling beyond the local demo.
+4. Approve retention periods, withdrawal handling, and deletion grace behavior.
+5. Decide whether report-photo replacement belongs in a later scope.

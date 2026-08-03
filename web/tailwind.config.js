@@ -16,12 +16,12 @@ module.exports = {
         danger: "var(--danger)"
       },
       fontFamily: {
-        display: ["Syne", "Inter", "system-ui", "sans-serif"],
+        display: ["DM Sans", "Inter", "system-ui", "sans-serif"],
         sans: ["DM Sans", "Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "Consolas", "monospace"]
+        mono: ["DM Sans", "Inter", "system-ui", "sans-serif"]
       },
       boxShadow: {
-        soft: "0 16px 40px rgba(0, 0, 0, 0.18)"
+        soft: "0 16px 40px rgba(31, 41, 55, 0.10)"
       }
     }
   },

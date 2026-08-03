@@ -23,6 +23,9 @@ export async function POST(request) {
     if (!reportId || message.length < 10) {
       return NextResponse.json({ error: "A case ID and short reason are required." }, { status: 400 });
     }
+    if (body.humanReviewAcknowledged !== true) {
+      return NextResponse.json({ error: "Confirm that this is a possible connection requiring human review." }, { status: 400 });
+    }
     if (!currentUser) {
       return NextResponse.json({ error: "Reporter sign in is required." }, { status: 401 });
     }
@@ -38,6 +41,8 @@ export async function POST(request) {
         status: true,
         visibility: true,
         publicVisible: true,
+        lifecycleStatus: true,
+        consentToContact: true,
         reporterId: true,
         reporter: {
           select: {
@@ -50,11 +55,17 @@ export async function POST(request) {
     if (!targetReport) {
       return NextResponse.json({ error: "Report not found." }, { status: 404 });
     }
-    if (targetReport.status === "HIDDEN" || targetReport.visibility !== "PUBLIC" || !targetReport.publicVisible) {
+    if (targetReport.lifecycleStatus !== "ACTIVE" || targetReport.status === "HIDDEN" || targetReport.visibility !== "PUBLIC" || !targetReport.publicVisible) {
       return NextResponse.json({ error: "Contact requests can only be created for public reports." }, { status: 403 });
     }
+    if (!targetReport.consentToContact) {
+      return NextResponse.json({ error: "The reporter has not enabled contact requests for this report." }, { status: 409 });
+    }
+    if (!targetReport.reporterId || !targetReport.reporter) {
+      return NextResponse.json({ error: "This public submission has not yet been claimed by its reporter. Contact remains unavailable until ownership is verified." }, { status: 409 });
+    }
 
-    if (currentUser?.id === targetReport.reporter.id) {
+    if (currentUser.id === targetReport.reporter.id) {
       return NextResponse.json({ error: "You cannot request contact for your own report." }, { status: 400 });
     }
 

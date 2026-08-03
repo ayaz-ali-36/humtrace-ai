@@ -87,14 +87,14 @@ Mobile:
 
 ## 4. Smart Search
 
-### Current Phase 4.5
+### Current Phase 5 engineering UI
 
 ~~~text
 +--------------------------------------------------------------------------------+
 | Smart Search                                                                   |
 | Use a photograph, descriptive details, or both. Human review is required.      |
 +--------------------------------------------------------------------------------+
-| Photograph [Choose file]   JPG/PNG/WEBP, max 5 MB, not stored or analyzed now  |
+| Photograph [Choose file]   JPG/PNG/WEBP, max 5 MB, request-scoped and discarded|
 +--------------------------------------+-----------------------------------------+
 | Age          [__________]             | Gender        [select]                  |
 | Height       [__________]             | Weight        [__________]              |
@@ -110,7 +110,7 @@ Mobile:
 +--------------------------------------------------------------------------------+
 ~~~
 
-### Phase 5 additions
+### Phase 5 processing and limitation states
 
 ~~~text
 +--------------------------------------------------------------------------------+
@@ -134,10 +134,10 @@ Mobile:
 ~~~text
 +--------------------------------------------------------------------------------+
 | Report a Missing Person / Unidentified Person                                  |
-| Step 1 of 7: Basic Information                                                 |
+| Step 1 of 4: Person and location                                               |
 +--------------------------------------------------------------------------------+
-| Progress: [1 Basic]--[2 Details]--[3 Location]--[4 Description]--[5 Reporter]  |
-|           --[6 Photo]--[7 Consent and Review]                                  |
+| Progress: [1 Person/location]--[2 Description/photo]                            |
+|           --[3 Reporter/permissions]--[4 Review/submit]                         |
 +--------------------------------------------------------------------------------+
 | Context-specific form fields                                                   |
 | [__________________________________________________________________________]   |
@@ -148,12 +148,12 @@ Mobile:
 +--------------------------------------------------------------------------------+
 ~~~
 
-Phase 5 consent/review step:
+Reporter/permissions step:
 
 ~~~text
 +--------------------------------------------------------------------------------+
 | Photograph and AI-assisted processing                                          |
-| [Image preview shown only to authorized reporter in future approved design]    |
+| [Local preview of the selected image]                                           |
 |                                                                                |
 | [ ] I confirm I am authorized to submit this photograph.                       |
 | [ ] I understand automated similarity can produce incorrect suggestions.       |
@@ -313,4 +313,3 @@ Phase 5 operations additions:
 - Data tables use stacked labeled rows rather than horizontal scrolling where practical.
 - Notices appear before result and contact actions on every viewport.
 - Phase 5 explanations stay visible and are not hidden in hover-only UI.
-

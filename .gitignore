@@ -24,7 +24,11 @@
 # Downloaded AI models and caches
 **/services/ai/models/
 **/services/ai/.hf-cache/
+ai-service/models/*
+!ai-service/models/.gitkeep
 **/.cache/
+**/.test-data/
+evaluation/runtime/
 **/*.safetensors
 **/*.onnx
 **/*.pt
@@ -45,4 +49,3 @@
 .idea/
 .DS_Store
 Thumbs.db
-

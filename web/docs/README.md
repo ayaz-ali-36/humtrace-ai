@@ -1,15 +1,17 @@
 # HumTrace AI Project Documentation
 
-Version: 1.0  
-Baseline: Phase 4.5 complete; Phase 5 design only  
-Last updated: 2026-07-14
+Version: 1.2
+Baseline: Phase 5 local engineering implemented; approximately 50-volunteer thesis pilot planned; normal activation evaluation pending
+Last updated: 2026-08-02
 
-This directory is the documentation baseline for HumTrace AI. It describes the system that is implemented today and the proposed Phase 5 AI-assisted similarity capability. Phase 5 items are design proposals and must not be treated as implemented until they are reviewed, approved, built, and evaluated.
+This directory describes the current application and preserves relevant design history. The implemented Phase 5 scope is English all-MiniLM-L6-v2 text similarity plus DeepFace FaceNet face similarity through a root-level internal FastAPI service. The final evaluation is not approved, so normal user-visible model activation remains gated.
+
+The implemented system does not generate, synthesize, edit, or enhance images. It only analyzes user-supplied photographs for possible similarity and never confirms identity.
 
 ## Status legend
 
-- **Implemented**: present in the Phase 4.5 repository.
-- **Phase 5 proposed**: approved design work is still required before implementation.
+- **Implemented**: present in the current repository.
+- **Phase 5 engineering implemented**: code and local model smoke tests are complete; representative release evaluation is still required.
 - **Out of scope**: intentionally excluded from the current local demo.
 
 ## Documents
@@ -31,7 +33,6 @@ This directory is the documentation baseline for HumTrace AI. It describes the s
 - Human review is required before any follow-up.
 - Contact details remain hidden until the receiving reporter accepts a contact request.
 - Admin users moderate content and operations; they do not make identity determinations.
-- Stored report photographs remain private and are never served from the public asset directory.
+- Stored report photographs remain outside the public asset directory. Anonymous access is disabled by default; a local presentation-only switch may serve eligible public-report photographs through a controlled no-store route and must remain off for deployment.
 - Smart Search photographs have zero persistence.
 - No Phase 5 model may be enabled without model, privacy, retention, and evaluation approval.
-

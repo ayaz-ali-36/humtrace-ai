@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
-import { englishTextEmbeddingActive, ENGLISH_TEXT_MODEL_VERSION, ENGLISH_TEXT_SCORING_VERSION } from "@/lib/ai/config";
-import { englishTextSimilarityScores } from "@/lib/ai/text-embeddings";
+import { resolveApprovedReleaseGate } from "@/lib/ai/release-gate";
 
 const statusLabels = {
   NEW: "New",
@@ -128,14 +127,16 @@ export function scoreReportPair(source, target, options = {}) {
 }
 
 function safeReport(report) {
+  const showDemoPhotos = process.env.HUMTRACE_DEMO_PUBLIC_REPORT_PHOTOS === "true";
   return {
     id: report.publicId,
-    type: report.type === "MISSING" ? "Missing Person" : "Unidentified Individual",
+    type: report.type === "MISSING" ? "Missing Person" : "Unidentified Person",
     name: report.nameUnknown ? "Unknown Person" : report.fullName,
     age: report.approximateAge,
     gender: report.gender || "Not specified",
     region: report.broadRegion || "Not specified",
-    description: report.description
+    description: report.description,
+    photoUrl: showDemoPhotos && report.photos?.length ? `/api/reports/${report.publicId}/photo` : null
   };
 }
 
@@ -146,6 +147,15 @@ export function mapRecommendation(row) {
     breakdown = JSON.parse(row.breakdownSummary || "[]");
   } catch {
     breakdown = [];
+  }
+  if (!Array.isArray(breakdown)) {
+    breakdown = breakdown && typeof breakdown === "object"
+      ? Object.entries(breakdown).map(([label, signal]) => ({
+          label: label.replace(/(^|_)([a-z])/g, (_match, _prefix, letter) => ` ${letter.toUpperCase()}`).trim(),
+          value: Number(signal?.score) || 0,
+          available: signal?.available === true
+        }))
+      : [];
   }
   try {
     attributes = JSON.parse(row.sharedAttributes || "[]");
@@ -163,8 +173,8 @@ export function mapRecommendation(row) {
     rawStatus: row.status,
     breakdown,
     attributes,
-    explanation: row.textModelVersion
-      ? "Development-only English text embeddings were combined with structured details. Evaluation is deferred; human review is required."
+    explanation: row.faceModelVersion || row.textModelVersion
+      ? "Available AI-assisted and structured signals produced a possible recommendation. Unavailable signals were not scored. This never confirms identity; human review is required."
       : "Deterministic local details produced this possible recommendation. Human review is required.",
     textEmbeddingUsed: Boolean(row.textModelVersion),
     evaluationStatus: row.textModelVersion ? "Deferred" : null,
@@ -174,42 +184,28 @@ export function mapRecommendation(row) {
 }
 
 export async function generateRecommendationsForReport(reportId, tx = prisma) {
-  const settings = await getSettings();
+  const settings = await getSettings(tx);
   const source = await tx.report.findUnique({
     where: { id: reportId }
   });
   if (!source) return [];
 
-  const targetType = source.type === "MISSING" ? "UNIDENTIFIED" : "MISSING";
   const candidates = await tx.report.findMany({
     where: {
-      type: targetType,
       id: { not: source.id },
+      lifecycleStatus: "ACTIVE",
       visibility: "PUBLIC",
       publicVisible: true,
-      status: { not: "HIDDEN" }
+      status: { notIn: ["HIDDEN", "ARCHIVED", "CLOSED_BY_REPORTER"] }
     },
-    take: 50,
     orderBy: { createdAt: "desc" }
   });
 
-  let textContext = { scores: new Map(), used: false };
-  if (englishTextEmbeddingActive(settings) && source.aiProcessingAllowed && !source.aiProcessingWithdrawnAt) {
-    try {
-      textContext = await englishTextSimilarityScores(source, candidates);
-    } catch (error) {
-      console.error("English text embedding scoring unavailable", error.message);
-    }
-  }
-  const threshold = textContext.used
-    ? Math.max(settings.recommendationDisplayThreshold, settings.englishTextEmbeddingThreshold)
-    : settings.recommendationDisplayThreshold;
+  const threshold = settings.recommendationDisplayThreshold;
   const scored = candidates
     .map((candidate) => ({
       candidate,
-      result: scoreReportPair(source, candidate, {
-        textEmbeddingScore: textContext.scores.get(candidate.id)
-      })
+      result: scoreReportPair(source, candidate)
     }))
     .filter((item) => item.result.score >= threshold)
     .sort((a, b) => b.result.score - a.result.score)
@@ -229,8 +225,8 @@ export async function generateRecommendationsForReport(reportId, tx = prisma) {
         qualityLabel: item.result.qualityLabel,
         sharedAttributes: JSON.stringify(item.result.sharedAttributes),
         breakdownSummary: JSON.stringify(item.result.breakdown),
-        textModelVersion: item.result.textEmbeddingUsed ? ENGLISH_TEXT_MODEL_VERSION : null,
-        scoringVersion: item.result.textEmbeddingUsed ? ENGLISH_TEXT_SCORING_VERSION : "phase4-deterministic-1",
+        textModelVersion: null,
+        scoringVersion: "phase4-deterministic-1",
         invalidatedAt: null,
         invalidationReason: null,
         status: "NEW"
@@ -242,13 +238,13 @@ export async function generateRecommendationsForReport(reportId, tx = prisma) {
         qualityLabel: item.result.qualityLabel,
         sharedAttributes: JSON.stringify(item.result.sharedAttributes),
         breakdownSummary: JSON.stringify(item.result.breakdown),
-        textModelVersion: item.result.textEmbeddingUsed ? ENGLISH_TEXT_MODEL_VERSION : null,
-        scoringVersion: item.result.textEmbeddingUsed ? ENGLISH_TEXT_SCORING_VERSION : "phase4-deterministic-1",
+        textModelVersion: null,
+        scoringVersion: "phase4-deterministic-1",
         status: "NEW"
       },
       include: {
-        sourceReport: true,
-        targetReport: true
+        sourceReport: { include: { photos: { where: { deletedAt: null }, take: 1, select: { id: true } } } },
+        targetReport: { include: { photos: { where: { deletedAt: null }, take: 1, select: { id: true } } } }
       }
     });
     saved.push(row);
@@ -259,9 +255,7 @@ export async function generateRecommendationsForReport(reportId, tx = prisma) {
       data: {
         reportId: source.id,
         title: "Possible recommendations generated",
-        description: textContext.used
-          ? saved.length + " public-safe possible recommendations were generated with development-only English text embeddings and structured scoring."
-          : saved.length + " public-safe possible recommendations were generated with deterministic local scoring."
+        description: saved.length + " public-safe possible recommendations were generated with deterministic local fallback scoring."
       }
     });
   }
@@ -270,6 +264,10 @@ export async function generateRecommendationsForReport(reportId, tx = prisma) {
 }
 
 export async function getReporterRecommendations(userId) {
+  const settings = await getSettings();
+  const developmentMode = process.env.HUMTRACE_AI_DEVELOPMENT_MODE === "true";
+  const releaseGate = developmentMode ? { approved: true } : await resolveApprovedReleaseGate({ faceEnabled: settings.faceSimilarityEnabled, textEnabled: settings.textSimilarityEnabled });
+  const phase5Visible = settings.aiAssistanceEnabled && releaseGate.approved;
   const rows = await prisma.recommendation.findMany({
     where: {
       sourceReport: {
@@ -279,15 +277,22 @@ export async function getReporterRecommendations(userId) {
         not: "DISMISSED"
       },
       invalidatedAt: null
+      ,...(phase5Visible ? {} : { OR: [{ scoringVersion: null }, { scoringVersion: { startsWith: "phase4" } }] })
     },
     include: {
-      sourceReport: true,
-      targetReport: true
+      sourceReport: { include: { photos: { where: { deletedAt: null }, take: 1, select: { id: true } } } },
+      targetReport: { include: { photos: { where: { deletedAt: null }, take: 1, select: { id: true } } } }
     },
     orderBy: [
       { score: "desc" },
       { createdAt: "desc" }
     ]
   });
-  return rows.map(mapRecommendation);
+  return rows
+    .filter((row) => {
+      if (!row.scoringVersion?.startsWith("phase5")) return true;
+      const modalities = new Set(String(row.modalityMask || "").split(",").filter(Boolean));
+      return (!modalities.has("face") || settings.faceSimilarityEnabled) && (!modalities.has("description") || settings.textSimilarityEnabled);
+    })
+    .map(mapRecommendation);
 }

@@ -24,7 +24,7 @@ sequenceDiagram
         API-->>UI: Generic failure
     else Report saved
         API->>Score: Generate deterministic possible recommendations
-        Score->>DB: Query eligible public opposite-type reports
+        Score->>DB: Query all other eligible public reports of both types
         Score->>DB: Upsert qualifying recommendations
         API-->>UI: Case ID, status, safe recommendations
     end
@@ -45,20 +45,22 @@ sequenceDiagram
     participant Vectors as Encrypted Embedding Store
 
     Reporter->>Web: Submit report and image
-    Web->>DB: Store report under human review
+    Web->>DB: Save report with reporter-selected visibility
     Web->>Files: Store private image
-    Web->>Queue: Queue eligible embedding job
-    Web-->>Reporter: Return case ID; processing pending
+    Web->>DB: Generate immediate public-safe recommendations
+    Web->>Queue: Queue eligible embedding job asynchronously
+    Web-->>Reporter: Return case ID, status, and immediate recommendations
     Worker->>Queue: Claim job idempotently
     Worker->>DB: Verify lifecycle, policy, photo, and model eligibility
     Worker->>Files: Read image by trusted photo record
     Worker->>AI: Send image/text for approved inference
     AI-->>Worker: Quality signals and embeddings
     Worker->>Vectors: Encrypt and persist report embeddings
-    Worker->>DB: Retrieve eligible opposite-type candidates
+    Worker->>DB: Retrieve eligible missing and unidentified candidates
     Worker->>DB: Save calibrated recommendations with expiry and versions
     Worker->>Queue: Mark job succeeded
     Worker->>DB: Create safe notification and timeline event
+    Note over Reporter,DB: Admin may moderate the saved report or recommendations afterward
 ~~~
 
 ## 3. Current Smart Search
@@ -75,7 +77,7 @@ sequenceDiagram
     UI->>API: Multipart search request
     API->>API: Validate photograph in memory
     alt No descriptive details
-        API-->>UI: Photograph accepted but image assistance unavailable in Phase 4.5
+        API-->>UI: Photograph accepted; approved AI is queued after moderation, otherwise unavailable safely
     else Details available
         API->>DB: Query up to 100 public unidentified reports
         API->>API: Deterministic detail scoring
@@ -101,7 +103,7 @@ sequenceDiagram
     AI-->>Web: Quality metadata and ephemeral query vectors
     Web->>Vectors: Retrieve eligible candidate vectors
     Web->>DB: Load allowlisted candidate fields and suppression state
-    Web->>Web: Calibrated scoring, thresholding, top-five limit
+    Web->>Web: Calibrated scoring, thresholding, reciprocal top-ten limit
     Web-->>Visitor: Safe suggestions and limitations
     Web->>Web: Discard bytes, vectors, crops, and intermediate objects
 ~~~
@@ -206,4 +208,3 @@ sequenceDiagram
     Worker->>DB: Mark metadata deleted and record safe retention outcome
     Note over Worker,DB: No vectors, raw content, contact values, or paths in retention logs
 ~~~
-

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { ROLES } from "@/lib/auth-constants";
-import { getSettings, setSettings } from "@/lib/settings";
+import { getSettings, setSettings, SettingValidationError } from "@/lib/settings";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -21,6 +21,17 @@ export async function PATCH(request) {
 
     const body = await request.json();
     const updated = await setSettings(body.settings || {}, admin.id);
+    const runtimeKeys = ["aiAssistanceEnabled", "faceSimilarityEnabled", "textSimilarityEnabled"];
+    if (runtimeKeys.some((key) => Object.prototype.hasOwnProperty.call(body.settings || {}, key))) {
+      const settings = await getSettings();
+      const enabled = settings.aiAssistanceEnabled && (settings.faceSimilarityEnabled || settings.textSimilarityEnabled);
+      await prisma.aIProcessingJob.updateMany({
+        where: { status: enabled ? "WAITING_CONFIG" : { in: ["PENDING", "RETRYABLE", "RUNNING"] } },
+        data: enabled
+          ? { status: "PENDING", availableAt: new Date(), retryAt: null, safeErrorCode: null, leaseOwner: null, leaseExpiresAt: null }
+          : { status: "WAITING_CONFIG", safeErrorCode: "AI_ASSISTANCE_DISABLED", leaseOwner: null, leaseExpiresAt: null }
+      });
+    }
 
     await prisma.auditLog.create({
       data: {
@@ -33,6 +44,8 @@ export async function PATCH(request) {
 
     return NextResponse.json({ ok: true, settings: await getSettings() });
   } catch (error) {
-    return NextResponse.json({ error: error.message || "Unable to update settings." }, { status: 400 });
+    if (error instanceof SettingValidationError) return NextResponse.json({ error: error.message }, { status: 400 });
+    console.error("Settings update failed", error.message);
+    return NextResponse.json({ error: "Unable to update settings." }, { status: 500 });
   }
 }

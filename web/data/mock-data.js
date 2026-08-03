@@ -15,7 +15,7 @@ export const reports = [
   },
   {
     id: "UI-2026-0001",
-    type: "Unidentified Individual",
+    type: "Unidentified Person",
     name: "Sample Report",
     age: "25",
     gender: "Male",
@@ -35,7 +35,7 @@ export const reports = [
     gender: "Male",
     region: "Lahore, Punjab",
     date: "April 2026",
-    status: "Potential Matches Available",
+    status: "Possible Recommendations Available",
     visibility: "Hidden",
     description: "Tall, glasses, black coat, information restricted by reporter preference.",
     recommendations: 4,
@@ -43,7 +43,7 @@ export const reports = [
   },
   {
     id: "UI-2026-0007",
-    type: "Unidentified Individual",
+    type: "Unidentified Person",
     name: "Sample Report",
     age: "18",
     gender: "Female",
@@ -129,7 +129,7 @@ export const connectionRequests = [
 ];
 
 export const notifications = [
-  "New potential match available",
+  "New possible recommendation available",
   "Contact request received",
   "Contact request accepted",
   "Report status updated",
@@ -144,7 +144,7 @@ export const users = [
 
 export const auditLogs = [
   { time: "2026-07-10 09:20", user: "Demo Reporter", role: "Reporter", action: "Report submitted", resource: "HT-M-2026-001", status: "Completed" },
-  { time: "2026-07-09 14:05", user: "System UI Preview", role: "Administrator", action: "Potential match generated", resource: "REC-204", status: "Demonstration Only" },
+  { time: "2026-07-09 14:05", user: "System UI Preview", role: "Administrator", action: "Possible recommendation generated", resource: "REC-204", status: "Demonstration Only" },
   { time: "2026-07-08 16:44", user: "Sara Ahmed", role: "Family Member", action: "Contact request sent", resource: "CR-102", status: "Pending" },
   { time: "2026-07-04 11:12", user: "Demo Reporter", role: "Family Member", action: "Contact request accepted", resource: "CR-088", status: "Completed" }
 ];

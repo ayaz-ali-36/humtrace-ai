@@ -36,6 +36,10 @@ async function patchSettings(cookie, settings) {
   });
 }
 
+function isProtectedRedirect(result) {
+  return [307, 308].includes(result.response.status) || (result.response.status === 200 && String(result.data).includes("NEXT_REDIRECT"));
+}
+
 async function main() {
   const originalSettings = await prisma.systemSetting.findMany();
   const restoreSettings = Object.fromEntries(originalSettings.map((row) => [row.key, row.value]));
@@ -59,7 +63,7 @@ async function main() {
 
   try {
     const loggedOutDashboard = await request("/admin/dashboard");
-    assert([307, 308].includes(loggedOutDashboard.response.status), "logged-out user should not access admin dashboard");
+    assert(isProtectedRedirect(loggedOutDashboard), "logged-out user should not access admin dashboard");
 
     const reporterLogin = await request("/api/auth/login", {
       method: "POST",
@@ -67,7 +71,7 @@ async function main() {
     });
     assert.equal(reporterLogin.response.status, 200, "reporter login should work");
     const reporterDashboard = await request("/admin/dashboard", { cookie: reporterLogin.cookie });
-    assert([307, 308].includes(reporterDashboard.response.status), "reporter should not access admin dashboard");
+    assert(isProtectedRedirect(reporterDashboard), "reporter should not access admin dashboard");
 
     const adminLogin = await request("/api/auth/login", {
       method: "POST",
@@ -119,10 +123,17 @@ async function main() {
     });
     assert.equal(restore.response.status, 200, "admin should restore archived content to review");
 
-    const republish = await request(`/api/reports/${publicReport.publicId}`, {
+    const unacknowledgedRepublish = await request(`/api/reports/${publicReport.publicId}`, {
       method: "PATCH",
       cookie: adminCookie,
       body: { status: "PUBLIC" }
+    });
+    assert.equal(unacknowledgedRepublish.response.status, 400, "admin should explicitly acknowledge human review before publication");
+
+    const republish = await request(`/api/reports/${publicReport.publicId}`, {
+      method: "PATCH",
+      cookie: adminCookie,
+      body: { status: "PUBLIC", humanReviewAcknowledged: true }
     });
     assert.equal(republish.response.status, 200, "admin should restore reviewed content to public");
 

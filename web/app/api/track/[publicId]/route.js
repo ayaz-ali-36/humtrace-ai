@@ -5,14 +5,14 @@ import { getSettings } from "@/lib/settings";
 
 const typeLabels = {
   MISSING: "Missing Person",
-  UNIDENTIFIED: "Unidentified Individual"
+  UNIDENTIFIED: "Unidentified Person"
 };
 
 const statusLabels = {
   SUBMITTED: "Report Submitted",
   UNDER_REVIEW: "Report Under Review",
   PUBLIC: "Content Review Completed",
-  POTENTIAL_MATCHES_AVAILABLE: "Possible Recommendations Available",
+  POTENTIAL_MATCHES_AVAILABLE: "Possible Matches Available",
   ACTIVE: "Active",
   ARCHIVED: "Archived"
 };

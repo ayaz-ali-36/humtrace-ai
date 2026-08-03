@@ -51,11 +51,24 @@ function sanitizeFileStem(name) {
   return stem || "report-photo";
 }
 
+function privateStorageRoot() {
+  return path.resolve(process.env.HUMTRACE_PRIVATE_STORAGE_ROOT || path.join(process.cwd(), "storage", "reports"));
+}
+
+export function resolvePrivateStoragePath(storagePath) {
+  const normalized = String(storagePath || "").replace(/\\/g, "/");
+  const prefix = "storage/reports/";
+  if (!normalized.startsWith(prefix)) throw new Error("PRIVATE_PHOTO_PATH_INVALID");
+  const root = privateStorageRoot();
+  const absolute = path.resolve(root, normalized.slice(prefix.length));
+  if (!absolute.startsWith(root + path.sep)) throw new Error("PRIVATE_PHOTO_PATH_INVALID");
+  return absolute;
+}
+
 export async function saveReportPhotoFile({ file, publicId }) {
   const extension = extensionByMimeType[file.type];
   const fileName = `${Date.now()}-${sanitizeFileStem(file.name)}${extension}`;
-  const relativeDirectory = path.join("storage", "reports", publicId);
-  const absoluteDirectory = path.join(process.cwd(), relativeDirectory);
+  const absoluteDirectory = path.join(privateStorageRoot(), publicId);
   const absolutePath = path.join(absoluteDirectory, fileName);
 
   await mkdir(absoluteDirectory, { recursive: true });
@@ -74,6 +87,9 @@ export async function saveReportPhotoFile({ file, publicId }) {
 }
 
 export async function deleteStoredReportPhoto(storagePath) {
-  if (!storagePath || !storagePath.startsWith("storage/reports/")) return;
-  await unlink(path.join(process.cwd(), storagePath)).catch(() => {});
+  try {
+    await unlink(resolvePrivateStoragePath(storagePath)).catch(() => {});
+  } catch {
+    // Invalid database paths must never be followed outside private storage.
+  }
 }

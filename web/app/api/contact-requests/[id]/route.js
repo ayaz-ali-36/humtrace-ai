@@ -51,6 +51,19 @@ export async function PATCH(request, { params }) {
         return { error: "Only the requester can cancel this request.", statusCode: 403 };
       }
 
+      if (["accept", "decline"].includes(body.action)) {
+        const target = contactRequest.targetReport;
+        const source = contactRequest.requesterReport;
+        const targetAvailable = target && target.lifecycleStatus === "ACTIVE" && target.visibility === "PUBLIC" && target.publicVisible && target.consentToContact;
+        const sourceAvailable = !source || (source.lifecycleStatus === "ACTIVE" && source.visibility === "PUBLIC" && source.publicVisible);
+        if (!targetAvailable || !sourceAvailable) {
+          if (contactRequest.status === CONTACT_REQUEST_STATUS.PENDING) {
+            await tx.contactRequest.update({ where: { id: contactRequest.id }, data: { status: CONTACT_REQUEST_STATUS.CANCELLED, activeKey: null } });
+          }
+          return { error: "This request is no longer available because a linked report left the public workflow.", statusCode: 409 };
+        }
+      }
+
       if (contactRequest.status !== CONTACT_REQUEST_STATUS.PENDING) {
         if (contactRequest.status === status) return { contactRequest };
         return { error: "This contact request has already been reviewed.", statusCode: 409 };

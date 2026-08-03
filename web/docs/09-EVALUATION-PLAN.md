@@ -1,244 +1,192 @@
-# Evaluation Plan
+# Thesis Pilot and Evaluation Plan
 
-## 1. Purpose
+## 1. Status and purpose
 
-This plan defines how HumTrace AI will evaluate software behavior, privacy controls, and Phase 5 similarity models before enabling user-facing AI assistance.
+This is an ethics-ready plan for a local final-year thesis pilot with approximately 50 consenting adult volunteers. It evaluates whether HumTrace retrieves useful possible similarities and avoids false recommendations. It does not approve production deployment, establish identity, or permit operational use with missing-person cases.
 
-Evaluation does not establish identity. It measures whether the system retrieves useful possible recommendations while controlling false positives, privacy risk, and operational failure.
+The pilot must begin only after the supervisor or institutional reviewer approves the final participant materials and the project owner fills in the responsible researcher, supervisor, institution, contact, storage location, and deletion-date fields.
 
-## 2. Release stages
+## 2. Participant information sheet
 
-| Stage | Capability | Gate |
-|---|---|---|
-| Baseline | Phase 4.5 deterministic detail scoring | Existing test suite |
-| Phase 5A lab | Text and general visual inference offline | Model/license/privacy review |
-| Phase 5A shadow | Generate results without showing users | Evaluation and incident review |
-| Phase 5A limited demo | Feature-flagged user-visible suggestions | Approved threshold and rollback |
-| Phase 5B lab | Optional face-region similarity offline | Separate sensitive-processing gate |
-| Phase 5B disabled/limited | No activation without explicit project approval | Independent review |
+Each volunteer receives the following information before deciding:
 
-## 3. Evaluation principles
+- Project: HumTrace AI final-year thesis pilot.
+- Researcher, supervisor, institution, and contact: **fill in before recruitment**.
+- Purpose: test local face-pattern and English-description retrieval under controlled conditions.
+- Participation: two short capture sessions, eight photographs total, and optional non-sensitive descriptive metadata.
+- Processing: photographs may be converted locally into numerical face embeddings for similarity ranking.
+- Limits: results can be wrong and never confirm identity.
+- Storage: data is pseudonymous, encrypted or access-restricted, kept off GitHub and public folders, and used only for the approved pilot.
+- Voluntary participation: refusal has no penalty and participants may stop before or during capture.
+- Withdrawal: participants may request deletion using their participant code until the stated anonymization or thesis cut-off date.
+- Presentation: allowing a photograph in the private defense presentation is a separate optional choice and is not required for research participation.
+- Complaints or questions: contact details and institutional route must be completed before recruitment.
 
-- Use synthetic or separately consented evaluation data.
-- Do not copy operational report photographs into evaluation datasets by default.
-- Separate development, calibration, and held-out test sets by individual and source.
-- Prevent near-duplicate images from crossing splits.
-- Document dataset origin, permission, collection conditions, demographics, language, quality, and limitations.
-- Measure the intended one-to-many retrieval use case at representative gallery sizes.
-- Evaluate the full pipeline, not only model embeddings.
-- Report uncertainty and insufficient sample sizes.
+Participants must have time to ask questions and retain a copy of this information.
 
-NIST resources informing the plan:
+## 3. Required consent records
 
-- [AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)
-- [AI RMF Core: Govern, Map, Measure, Manage](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/)
-- [Face Recognition Technology Evaluation 1:N](https://pages.nist.gov/frvt/html/frvt1N.html)
-- [Demographic Effects in Face Recognition](https://pages.nist.gov/frvt/html/frvt_demographics.html)
+### 3.1 Biometric-processing consent
 
-## 4. Evaluation datasets
+Record an affirmative answer for every item below, with participant code, printed name, signature, researcher signature, and date:
 
-### 4.1 Text dataset
+1. I am at least 18 years old and have read the participant information.
+2. I voluntarily agree to two capture sessions and eight photographs.
+3. I understand that HumTrace will process my face photographs into numerical embeddings for local similarity evaluation.
+4. I understand that similarity output can be wrong and does not confirm identity.
+5. I understand the storage, access, retention, withdrawal, and deletion procedure.
+6. I understand that my raw images and identifiers will not be committed to GitHub or placed in the website's public asset directory.
+7. I know how to contact the researcher and request withdrawal.
 
-Include consented or synthetic case descriptions in:
+All seven items are required. A general photography release is not a substitute for explicit biometric-processing consent.
 
-- English.
-- Urdu.
-- Roman Urdu.
-- Mixed-language descriptions.
-- Short and long descriptions.
-- Spelling variants and transliteration variants.
-- Conflicting structured and free-text details.
+### 3.2 Optional presentation consent
 
-Labels should identify relevant and irrelevant candidate relationships for retrieval evaluation without claiming operational identity.
+Use a separate checkbox and signature line:
 
-### 4.2 General visual dataset
+> I optionally allow selected photographs or screenshots containing my image to be shown only during the private thesis defense presentation. I understand that refusing does not affect participation in the evaluation.
 
-Include consented or synthetic images varying:
+Default: **No**. This choice must not be bundled with biometric-processing consent. Public web, social-media, publication, or GitHub use requires new permission and is not covered by this pilot.
 
-- Clothing color and type.
-- Body appearance and visible accessories.
-- Background/context similarity.
-- Camera quality and compression.
-- Blur and motion.
-- Lighting and exposure.
-- Occlusion and cropping.
-- Pose and viewing angle.
-- Multiple people or no suitable person.
+## 4. Recruitment and exclusions
 
-### 4.3 Optional face-region dataset
+- Target approximately 50 adults aged 18 or above.
+- Recruit volunteers who can freely consent; do not recruit minors or people unable to consent.
+- Do not imply that participation can help locate a real person.
+- Do not use operational reports, scraped images, social-media images, or photographs supplied by someone other than the depicted adult.
+- Avoid collecting names, religion, national identity numbers, medical data, or exact home addresses in evaluation metadata.
+- Participation and presentation consent must not affect grades, employment, or access to services.
 
-Only after Phase 5B approval:
+## 5. Two-session, eight-photo capture protocol
 
-- Explicitly consented or appropriate synthetic data.
-- Multiple images per individual under varied conditions.
-- Large non-related comparison population.
-- Age bands, gender, and ethically annotated skin-tone slices when consent and sample sizes support them.
-- No use of region, name, language, or religion as demographic proxies.
+Assign the pseudonymous participant code before capture. Use the same camera settings where practical, but allow controlled variation needed to test robustness.
 
-## 5. Metrics
+### Session 1: reference gallery, four photographs
 
-### 5.1 Retrieval metrics
+1. Front-facing, neutral expression, even indoor light.
+2. Front-facing, natural expression, same location.
+3. Head turned approximately 30 degrees left.
+4. Head turned approximately 30 degrees right.
 
-| Metric | Purpose |
+### Session 2: held-time queries, four photographs
+
+Capture on another day or after a meaningful break:
+
+1. Front-facing under different safe lighting.
+2. Front-facing with a different non-sensitive background.
+3. Slight left pose with ordinary appearance variation such as glasses if normally worn.
+4. Slight right pose with ordinary appearance variation.
+
+Capture rules:
+
+- One participant per image; no bystanders.
+- No masks unless mask robustness is an explicitly approved sub-test.
+- Avoid extreme filters, beauty effects, or image enhancement.
+- Check focus and face visibility at capture time without running identity claims.
+- Record only the pseudonymous code and approved metadata.
+- Delete accidental, duplicate, or bystander-containing captures immediately.
+
+## 6. Pseudonymous metadata template
+
+Use one row per image. Keep the identity-to-code key in a separate restricted location.
+
+| Field | Example or allowed value |
 |---|---|
-| Recall@1 and Recall@5 | Relevant candidate retrieval within top results |
-| Precision@1 and Precision@5 | Fraction of displayed candidates labeled relevant |
-| Mean reciprocal rank | Ranking quality |
-| No-result accuracy | Ability to avoid displaying candidates when none meet policy |
-| False-positive identification rate | Non-related searches returning at least one candidate above threshold |
-| False-negative identification rate | Related searches failing to return the labeled candidate above threshold |
+| participant_code | HTV-001 |
+| session | 1 or 2 |
+| image_number | 1 to 4 |
+| capture_date | YYYY-MM-DD |
+| age_band | 18-24, 25-34, 35-44, 45+; optional |
+| gender_self_description | Optional; participant may decline |
+| lighting | even, low, bright, mixed |
+| pose | front, left-30, right-30 |
+| glasses | yes, no, not recorded |
+| image_quality | usable, limited, rejected |
+| biometric_consent | yes; required |
+| presentation_consent | yes or no; separate |
+| withdrawal_status | active, requested, deleted |
+| notes | Non-identifying technical note only |
 
-### 5.2 Calibration and threshold metrics
+Do not put participant name, email, phone number, or consent signature in this metadata file.
 
-- Score distributions for related and non-related examples.
-- Threshold performance at each representative gallery size.
-- Confidence intervals for all primary rates.
-- Calibration drift between development and held-out data.
-- Result-count distribution per query.
-- Threshold stability across model and preprocessing versions.
+## 7. Secure folder and data-handling plan
 
-### 5.3 Slice metrics
+~~~text
+pilot-private/                    Never commit; restricted access
+|-- identity-key/                Code-to-person key and contact record
+|-- consent/                     Signed information and consent records
+|-- raw/HTV-###/session-1/       Original captures
+|-- raw/HTV-###/session-2/
+|-- metadata/                    Pseudonymous metadata only
+|-- derived/                     Encrypted embeddings and controlled outputs
+`-- deletion-log/                Code, scope, date, operator; no image content
 
-Report primary metrics by:
-
-- Input language.
-- Age band.
-- Gender where appropriately labeled.
-- Skin-tone group only when ethically and explicitly annotated.
-- Image-quality band.
-- Pose, occlusion, and lighting.
-- Device/source quality.
-- Time gap between images.
-- Report type.
-- Region only for service coverage analysis, not as a sensitive identity proxy.
-
-### 5.4 System metrics
-
-- Report embedding job latency and failure rate.
-- Smart Search end-to-end latency.
-- AI service timeout and safe-fallback rate.
-- Queue age and retry count.
-- Embedding invalidation completion.
-- Retention deletion completion.
-- Unauthorized request rejection.
-- Zero-retention verification.
-- Model kill-switch activation time.
-
-### 5.5 Human-review metrics
-
-- View, dismiss, suppress, flag, and contact-request rates.
-- Dismissal and quality-incident reason distribution.
-- Time from recommendation to review.
-- Reappearance rate for suppressed pairs; target zero under the same model version.
-- Contact acceptance/decline as workflow outcomes, not as ground truth for identity.
-
-## 6. Test design
-
-### 6.1 Offline model tests
-
-1. Freeze model, preprocessing, and dataset versions.
-2. Generate embeddings once under controlled deterministic settings where possible.
-3. Evaluate each modality independently.
-4. Evaluate combined scoring with missing modalities.
-5. Run representative gallery-size experiments.
-6. Run slice and quality analyses.
-7. Produce an immutable evaluation artifact and limitations report.
-
-### 6.2 Shadow testing
-
-- Run against a synthetic or separately consented local dataset.
-- Do not show Phase 5 results to normal users.
-- Compare model output with deterministic baseline and evaluator labels.
-- Exercise retry, timeout, invalidation, retention, and kill-switch paths.
-
-### 6.3 Security and privacy tests
-
-Verify:
-
-- Search images never create files.
-- Query embeddings never create database rows.
-- Response serialization cannot expose vectors or private paths.
-- Inference service rejects non-loopback or unauthenticated calls.
-- Logs contain no image bytes, vectors, raw sensitive text, contact values, or keys.
-- Encryption detects modification and uses non-reused nonces.
-- Permission withdrawal and lifecycle changes invalidate derived data.
-- Retention removes files/vectors and dependent recommendations as specified.
-
-### 6.4 Abuse and misuse tests
-
-- Oversized and malformed files.
-- MIME/signature disagreement.
-- Images with multiple people or no suitable person.
-- Repeated automated searches and rate-limit behavior.
-- Attempts to retrieve hidden reports.
-- Attempts to search with private paths or internal identifiers.
-- Attempts by admin to bypass contact consent.
-- Attempts to interpret results as identity decisions in UI text or API fields.
-
-## 7. Release criteria
-
-### 7.1 Required before any Phase 5A activation
-
-- Model license, checksum, and provenance approved.
-- Data-processing purpose and retention approved.
-- Held-out text and visual evaluation complete.
-- False-positive target and approved threshold recorded for representative gallery size.
-- No unexplained material slice disparity.
-- If a slice lacks enough data, the limitation is explicit and activation scope is restricted.
-- Zero-retention, encryption, authorization, deletion, fallback, and kill-switch tests pass.
-- Top-result limit and safe explanations pass UI/API checks.
-- All existing project validation commands pass.
-
-The numerical false-positive target is deliberately not fixed in this document. It must be chosen after baseline measurement and approved with confidence intervals, gallery-size assumptions, and consequence analysis.
-
-### 7.2 Additional required before Phase 5B activation
-
-- Separate face-region processing-policy approval.
-- Dedicated consent/basis and withdrawal design.
-- Representative one-to-many evaluation.
-- Demographic and quality slice evaluation.
-- Independent review of model/license/dataset limitations.
-- Verified ability to disable only face-region processing.
-
-## 8. Existing software validation suite
-
-Run from the web directory:
-
-~~~powershell
-npm run lint
-npm run build
-npm run check:phase45
-npm run check:terms
-npm run check:routes
-npm run check:public-reports
-npm run check:uploads
+evaluation/runtime/              Ignored technical evaluation output
+evaluation/reports/              Aggregate public-safe metrics and limitations only
 ~~~
 
-With HUMTRACE_BASE_URL set to http://localhost:3010:
+- Keep raw images and the identity key outside the repository and web `public/` directory.
+- Limit access to the named student researcher and approved supervisor or evaluator.
+- Use device encryption and a strong account password; keep backups encrypted and access-limited.
+- Do not email raw images or use consumer cloud synchronization unless explicitly approved.
+- The application database, private report storage, model artifacts, and evaluation runtime remain ignored by Git.
+- Record access, export, withdrawal, and deletion events using participant codes.
+- Publish only aggregate metrics with no raw image, embedding, private path, or small-group disclosure.
 
-~~~powershell
-npm run check:auth-workflows
-npm run check:phase3-workflows
-npm run check:phase4-workflows
-npm run check:phase4-admin-workflows
-npm run check:phase45-workflows
-~~~
+## 8. Withdrawal and deletion procedure
 
-Phase 5 shall add foundation, privacy, retention, model-registry, job, inference-contract, evaluation, scoring, and live workflow checks without removing existing checks.
+1. The participant submits the participant code to the researcher using the listed contact route.
+2. The researcher verifies the request without asking for unnecessary identity information.
+3. Mark the code as `withdrawal_requested` and stop new processing immediately.
+4. Remove the participant from pending experiments and invalidate cached rankings.
+5. Delete all raw session images, derived embeddings, metadata rows, working copies, and identifiable screenshots for that code.
+6. Delete the participant's consent/contact record when institutional record-keeping rules permit; otherwise restrict it and record why it must be retained.
+7. Check backups and delete at the next documented backup cycle.
+8. Add a minimal deletion-log entry containing code, scope, date, and operator—never biometric content.
+9. Confirm completion to the participant within the period stated in the approved information sheet.
 
-## 9. Evaluation report template
+Aggregate results already included in an irreversibly aggregated analysis may not be separable; this limitation and the withdrawal cut-off date must be stated before consent.
 
-Every evaluation artifact shall include:
+## 9. Development and held-out evaluation design
 
-1. Purpose and prohibited uses.
-2. Model artifact, version, checksum, and license.
-3. Preprocessing and scoring versions.
-4. Dataset provenance, permission, size, splits, and limitations.
-5. Gallery size and query composition.
-6. Overall and slice-level metrics with confidence intervals.
-7. Quality failure behavior.
-8. Threshold proposal and rationale.
-9. Known limitations and unmeasured risks.
-10. Reviewer names/roles, approval state, and date.
-11. Rollback and disable procedure.
+Split by participant, never by photograph. No person may appear in more than one split.
 
+| Split | Suggested participants | Purpose |
+|---|---:|---|
+| Development | 30 | Verify pipeline and explore candidate thresholds |
+| Validation | 10 | Select and freeze threshold and result-limit policy |
+| Held-out test | 10 | Final unbiased thesis result after settings are frozen |
+
+- Session 1 images form the reference gallery; Session 2 images form queries.
+- Include unrelated participants as negatives for every query.
+- Freeze model version, preprocessing, score combination, threshold, and gallery assumptions before the held-out test.
+- Do not tune after viewing held-out identities. Any change creates a new experiment and requires a new untouched test set.
+- Report exact sample counts and confidence intervals; approximately 50 volunteers is a small pilot and cannot establish population-wide fairness or production safety.
+
+Primary metrics:
+
+- Recall@1 and Recall@5.
+- Precision@1 and Precision@5.
+- Mean reciprocal rank.
+- False-positive recommendation rate.
+- No-result accuracy at the proposed threshold.
+- Search latency and quality-limited/no-face/multiple-face rates.
+- Results by approved quality conditions; demographic slices only when consented and large enough to avoid misleading claims.
+
+## 10. Separation from Faces94
+
+Faces94 tooling and any prior engineering result remain evaluation-only. Do not import it into the normal application database, expose its images, combine it with volunteer data, or treat it as consent for this use case. The volunteer pilot receives its own dataset version, database, runtime folder, report, and approval decision.
+
+## 11. Release decision and professor-facing explanation
+
+Professor-facing summary:
+
+> HumTrace is a thesis pilot that demonstrates report submission, local similarity retrieval, human review, and consent-based contact. The model produces ranked possible similarities, not identity decisions. Approximately 50 consenting adults provide eight controlled photographs across two sessions. Participants are split by person into development, validation, and untouched held-out groups. Raw images and biometric embeddings remain local and off GitHub. The pilot can support a thesis evaluation, but its small convenience sample does not justify production deployment or population-wide accuracy claims.
+
+The supervisor-facing result should state one of:
+
+- **Engineering demo only:** workflow works; evaluation incomplete.
+- **Thesis pilot evaluated:** metrics reported for the approved sample and conditions only.
+- **Not approved:** privacy, quality, threshold, or false-positive criteria were not satisfied.
+
+No pilot result authorizes automated identity confirmation, law-enforcement use, public biometric search, or production deployment.

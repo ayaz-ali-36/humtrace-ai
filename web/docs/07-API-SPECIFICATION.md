@@ -2,11 +2,11 @@
 
 ## 1. Scope
 
-Base URL for the local production server: http://localhost:3010
+Base URL for the local production server: http://localhost:3000
 
 All endpoints are Next.js App Router route handlers. JSON is used unless multipart/form-data is specified. Authentication uses the HttpOnly humtrace_session cookie.
 
-Phase 5 internal inference interfaces are described separately and are not implemented.
+Phase 5 internal inference interfaces are implemented by the loopback-only FastAPI service and are never exposed as public browser APIs.
 
 ## 2. Common behavior
 
@@ -203,12 +203,12 @@ Core fields:
 | clothing | Optional | Descriptive text |
 | identifyingFeatures | Optional | Descriptive text |
 | medicalCondition | Optional | Sensitive report detail |
-| reporterName | Yes | Reporter-facing ownership context |
-| reporterEmail | Yes | Does not claim an existing account |
+| reporterName | Public submission | Derived from a signed-in reporter account otherwise |
+| reporterEmail | Public submission | Must match the later claiming account |
 | reporterPhone | Optional | Private |
 | relationship | Optional | Reporter relationship |
 | preferredContactMethod | Yes | EMAIL or PHONE |
-| publicVisible | Yes | Request for public review |
+| publicVisible | Yes | Publish public-safe report details immediately when true; keep limited when false |
 | photoConfirm | Yes | Human image attestation |
 | consent | Yes | Contact/report consent |
 | photo | Yes | JPG, PNG, or WEBP; max 5 MB |
@@ -219,14 +219,26 @@ Success 200:
 {
   "ok": true,
   "caseId": "MP-2026-0001",
-  "status": "SUBMITTED",
-  "recommendations": [],
-  "recommendationNotice": "No public-safe possible recommendations are available yet.",
-  "message": "Report and local photo file saved for human review."
+  "status": "PUBLIC",
+  "claimCode": "HTC-XXXX-XXXX-XXXX-XXXX",
+  "ownership": "AWAITING_CLAIM",
+  "recommendations": ["up to five public-safe recommendation objects"],
+  "aiProcessingStatus": "PENDING",
+  "recommendationNotice": "Public-safe possible recommendations are shown immediately. Consented AI assistance is also queued asynchronously.",
+  "message": "Report and private local photo saved. Save the one-time claim code to manage the report after sign-in."
 }
 ~~~
 
+`claimCode` is returned only for a signed-out public submission. Signed-in submissions return `null` and `ACCOUNT_OWNED`.
+Admin approval is not part of submission. Admins may moderate an already saved report afterward.
+
 Errors: 400, 503, 500.
+
+### POST /api/reports/claim
+
+Access: Active reporter. JSON body: `caseId`, `claimCode`.
+
+The signed-in account email must match the private email entered during public submission. Success transfers report ownership once. Invalid combinations use a generic error; five consecutive failures lock the claim for 15 minutes. Errors: 400, 401, 409, 429, 503, 500.
 
 ### PATCH /api/reports/[publicId]
 
@@ -306,10 +318,11 @@ Content-Type: multipart/form-data
 
 Fields: photo, age, gender, heightCm, weightKg, region, location, description, clothing, identifyingFeatures. At least one photo or descriptive field is required.
 
-Current Phase 4.5 behavior:
+Current Phase 5 behavior:
 
-- Image is validated in memory but is not analyzed or stored.
-- Details are compared with public unidentified reports.
+- Image is validated and, only when the approved gate is active, analyzed in memory; image bytes and query vectors are then discarded.
+- Details are compared with eligible public Missing Person reports, Unidentified Person reports, or both according to `searchScope`.
+- If approved AI is disabled or offline, safe detail-only fallback remains available with an explicit notice.
 - Response contains public-safe candidate fields only.
 
 Success 200:
@@ -319,7 +332,7 @@ Success 200:
   "ok": true,
   "recommendations": [],
   "photoAccepted": true,
-  "notice": "No detail-based possible recommendations met the current threshold."
+  "notice": "No possible recommendations met the current threshold."
 }
 ~~~
 
@@ -516,14 +529,14 @@ The web application and worker should use a loopback-only service contract with:
 - Quality metadata and vectors in the response.
 - No persistence by the inference service.
 
-Proposed operations:
+Implemented internal operations:
 
 | Operation | Caller | Output |
 |---|---|---|
-| health | Web/worker | Service readiness and loaded approved model versions |
-| embed-text | Worker or Smart Search | Text vector, language metadata, warnings |
-| embed-image | Worker or Smart Search | Visual vector, quality metadata, warnings |
-| embed-face-region | Approved Phase 5B caller | Optional sensitive vector and quality metadata |
+| `GET /health` | Web/worker | Service state, concurrency, model identifiers |
+| `POST /ai/text-embedding` | Worker or Smart Search | English text vector and model metadata |
+| `POST /ai/face-embedding` | Worker or Smart Search | Face vector or safe no-face/multiple-face/quality outcome |
+| `POST /ai/cosine-similarity` | Web/worker | Ranked cosine similarities for supplied vectors |
+| `POST /ai/recommendation-score` | Web/worker | Seven-signal normalized score and modality mask |
 
 These operations shall not be exposed under public /api routes.
-

@@ -4,23 +4,19 @@ export const publicRoutes = [
   { href: "/browse", label: "Browse" },
   { href: "/report/missing", label: "Report Missing" },
   { href: "/report/unidentified", label: "Report Unidentified" },
-  { href: "/track", label: "Track" },
-  { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" }
 ];
 
 export const reporterRoutes = [
-  { href: "/reporter/dashboard", label: "My Cases" },
-  { href: "/reporter/my-reports", label: "Case Reports" },
-  { href: "/reporter/recommendations", label: "Possible Recommendations" },
+  { href: "/reporter/dashboard", label: "Overview" },
+  { href: "/reporter/my-reports", label: "My Reports" },
+  { href: "/reporter/recommendations", label: "Possible Matches" },
   { href: "/reporter/connection-requests", label: "Contact Requests" },
-  { href: "/reporter/profile", label: "Profile" }
+  { href: "/reporter/profile", label: "Account" }
 ];
 
 export const adminRoutes = [
   { href: "/admin/dashboard", label: "Admin Dashboard" },
-  { href: "/admin/manage", label: "Manage" },
-  { href: "/admin/staff", label: "Admin Staff" }
+  { href: "/admin/manage", label: "Manage" }
 ];
 
 export const allPageRoutes = [
@@ -36,6 +32,7 @@ export const allPageRoutes = [
   "/register",
   "/reporter/dashboard",
   "/reporter/my-reports",
+  "/reporter/claim-report",
   "/reporter/recommendations",
   "/reporter/connection-requests",
   "/reporter/profile",

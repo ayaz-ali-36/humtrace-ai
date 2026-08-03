@@ -3,14 +3,14 @@ import { getSettings } from "@/lib/settings";
 
 const typeLabels = {
   MISSING: "Missing Person",
-  UNIDENTIFIED: "Unidentified Individual"
+  UNIDENTIFIED: "Unidentified Person"
 };
 
 const statusLabels = {
   SUBMITTED: "Report Submitted",
   UNDER_REVIEW: "Report Under Review",
   PUBLIC: "Content Review Completed",
-  POTENTIAL_MATCHES_AVAILABLE: "Possible Recommendations Available",
+  POTENTIAL_MATCHES_AVAILABLE: "Possible Matches Available",
   CLOSED_BY_REPORTER: "Closed by Reporter",
   ARCHIVED: "Archived",
   HIDDEN: "Hidden",
@@ -51,6 +51,9 @@ function mapReport(report) {
     weightKg: report.weightKg,
     clothing: report.clothing || "",
     identifyingFeatures: report.identifyingFeatures || "",
+    aiProcessingAllowed: report.aiProcessingAllowed,
+    aiProcessingStatus: report.aiProcessingStatus || "DISABLED",
+    publicVisibilityRequested: report.publicVisible,
     recommendations: report._count?.sourceRecommendations || 0,
     timeline: report.timelineEvents?.map((event) => ({
       title: event.title,
@@ -104,10 +107,9 @@ export async function getReporterDashboardSummary(userId) {
     }),
     prisma.recommendation.count({
       where: {
-        OR: [
-          { sourceReport: { reporterId: userId } },
-          { targetReport: { reporterId: userId } }
-        ]
+        sourceReport: { reporterId: userId },
+        status: { not: "DISMISSED" },
+        invalidatedAt: null
       }
     })
   ]);
@@ -141,22 +143,25 @@ export async function getReporterConnectionRequests(userId) {
     }
   });
 
-  return requests.map((request) => ({
+  return requests.map((request) => {
+    const linkedReports = [request.targetReport, request.requesterReport].filter(Boolean);
+    const workflowActive = linkedReports.every((report) => report.lifecycleStatus === "ACTIVE" && report.visibility === "PUBLIC" && report.publicVisible);
+    return ({
     id: request.id,
     direction: request.recipientId === userId ? "Incoming" : "Outgoing",
-    canAccept: request.recipientId === userId && request.status === "PENDING",
-    canDecline: request.recipientId === userId && request.status === "PENDING",
+    canAccept: request.recipientId === userId && request.status === "PENDING" && workflowActive,
+    canDecline: request.recipientId === userId && request.status === "PENDING" && workflowActive,
     canCancel: request.requesterId === userId && request.status === "PENDING",
     status: titleCaseStatus(request.status),
     relatedReportId: request.targetReport?.publicId || request.requesterReport?.publicId || "No case linked",
     region: request.targetReport?.broadRegion || request.requesterReport?.broadRegion || "Not specified",
-    score: 0,
     message: request.message,
     date: formatDate(request.createdAt),
-    contact: request.status === "ACCEPTED"
+    contact: request.status === "ACCEPTED" && workflowActive
       ? (request.requesterId === userId ? preferredContact(request.recipient) : preferredContact(request.requester))
-      : "Hidden until acceptance"
-  }));
+      : request.status === "ACCEPTED" ? "Hidden because a linked report left the public workflow" : "Hidden until acceptance"
+  });
+  });
 }
 
 export async function getAdminManageData() {

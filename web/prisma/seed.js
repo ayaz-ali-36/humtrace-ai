@@ -1,16 +1,35 @@
 const { PrismaClient } = require("@prisma/client");
+const bcrypt = require("bcryptjs");
 
 const prisma = new PrismaClient();
 
 async function main() {
+  await prisma.recommendationFeedback.deleteMany();
+  await prisma.suppressedPair.deleteMany();
+  await prisma.retentionEvent.deleteMany();
+  await prisma.reportFaceEmbedding.deleteMany();
+  await prisma.reportTextEmbedding.deleteMany();
+  await prisma.aIProcessingJob.deleteMany();
+  await prisma.evaluationRun.deleteMany();
+  await prisma.aIModel.deleteMany();
+  await prisma.session.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.timelineEvent.deleteMany();
   await prisma.contactRequest.deleteMany();
   await prisma.recommendation.deleteMany();
   await prisma.reportPhoto.deleteMany();
+  await prisma.reportClaim.deleteMany();
   await prisma.report.deleteMany();
+  await prisma.systemSetting.deleteMany();
   await prisma.user.deleteMany();
+
+  const privacyAcceptedAt = new Date();
+  const [reporterHash, secondReporterHash, adminHash] = await Promise.all([
+    bcrypt.hash("ReporterDemo!2026", 10),
+    bcrypt.hash("SecondReporter!2026", 10),
+    bcrypt.hash("AdminDemo!2026", 10)
+  ]);
 
   const demoReporter = await prisma.user.create({
     data: {
@@ -18,8 +37,12 @@ async function main() {
       name: "Demo Reporter",
       email: "reporter@humtrace.demo",
       phone: "+92-300-0000000",
+      passwordHash: reporterHash,
       role: "REPORTER",
-      region: "Punjab"
+      region: "Punjab",
+      preferredContactMethod: "EMAIL",
+      privacyPolicyVersion: "phase5-privacy-1",
+      privacyAcceptedAt
     }
   });
 
@@ -28,8 +51,12 @@ async function main() {
       id: "user_second_reporter",
       name: "Second Reporter",
       email: "second.reporter@humtrace.demo",
+      passwordHash: secondReporterHash,
       role: "REPORTER",
-      region: "Sindh"
+      region: "Sindh",
+      preferredContactMethod: "EMAIL",
+      privacyPolicyVersion: "phase5-privacy-1",
+      privacyAcceptedAt
     }
   });
 
@@ -38,9 +65,28 @@ async function main() {
       id: "user_demo_admin",
       name: "Demo Admin",
       email: "admin@humtrace.demo",
+      passwordHash: adminHash,
       role: "ADMIN",
-      region: "Islamabad Capital Territory"
+      region: "Islamabad Capital Territory",
+      preferredContactMethod: "EMAIL",
+      privacyPolicyVersion: "phase5-privacy-1",
+      privacyAcceptedAt
     }
+  });
+
+  await prisma.systemSetting.createMany({
+    data: [
+      { key: "publicSearchEnabled", value: "true", description: "Allow public Browse/Search and public tracking results." },
+      { key: "reportSubmissionEnabled", value: "true", description: "Allow public submissions and signed-in reporter submissions." },
+      { key: "recommendationDisplayThreshold", value: "0", description: "Minimum possible-recommendation score displayed to users." },
+      { key: "duplicateWarningThreshold", value: "85", description: "Reserved for a future duplicate-review workflow." },
+      { key: "aiAssistanceEnabled", value: "false", description: "Global local AI assistance kill switch." },
+      { key: "faceSimilarityEnabled", value: "false", description: "Local face-similarity kill switch." },
+      { key: "textSimilarityEnabled", value: "false", description: "Local English-text-similarity kill switch." },
+      { key: "englishTextEmbeddingEnabled", value: "false", description: "Legacy switch retained for migration compatibility." },
+      { key: "englishTextEmbeddingThreshold", value: "35", description: "Legacy development threshold retained for migration compatibility." },
+      { key: "maintenanceMode", value: "false", description: "Temporarily pause public workflows." }
+    ]
   });
 
   const missingReport = await prisma.report.create({
@@ -49,18 +95,19 @@ async function main() {
       publicId: "MP-2026-0047",
       type: "MISSING",
       reporterId: demoReporter.id,
-      fullName: "Ali Khan",
+      fullName: "Fictional Demo Person A",
       approximateAge: "25",
       gender: "Female",
       broadRegion: "Skardu, GB",
       specificLocation: "Skardu city area",
       eventDate: new Date("2026-06-15T00:00:00.000Z"),
-      description: "Medium height, dark hair, blue scarf, limited public details.",
+      description: "Clearly fictional non-operational demo record with a blue scarf.",
       status: "UNDER_REVIEW",
       visibility: "PUBLIC",
+      publicVisible: true,
       consentToContact: true,
       aiProcessingAllowed: true,
-      aiProcessingPolicyVersion: "phase5-development-1",
+      aiProcessingPolicyVersion: "phase5-local-1",
       aiProcessingAllowedAt: new Date(),
       photoRequirementNote: "Primary person image required before matching workflow."
     }
@@ -78,12 +125,13 @@ async function main() {
       broadRegion: "Karachi, Sindh",
       specificLocation: "Karachi public assistance center",
       eventDate: new Date("2026-05-20T00:00:00.000Z"),
-      description: "Average build, brown jacket, respectful limited public summary.",
+      description: "Clearly fictional non-operational demo record with a brown jacket.",
       status: "PUBLIC",
       visibility: "PUBLIC",
+      publicVisible: true,
       consentToContact: true,
       aiProcessingAllowed: true,
-      aiProcessingPolicyVersion: "phase5-development-1",
+      aiProcessingPolicyVersion: "phase5-local-1",
       aiProcessingAllowedAt: new Date(),
       photoRequirementNote: "Name may be unknown, but a human face/person image is still required."
     }
@@ -143,7 +191,8 @@ async function main() {
       requesterReportId: missingReport.id,
       targetReportId: unidentifiedReport.id,
       message: "I believe this may be related to a missing family member. Please review the limited details.",
-      status: "PENDING"
+      status: "PENDING",
+      activeKey: `${demoReporter.id}:${unidentifiedReport.id}`
     }
   });
 
@@ -177,8 +226,8 @@ async function main() {
         id: "notification_recommendation",
         userId: demoReporter.id,
         reportId: missingReport.id,
-        title: "Potential match ready",
-        message: "A Phase 4 deterministic possible recommendation is available for review."
+        title: "Possible recommendation ready",
+        message: "A possible recommendation is available for mandatory human review."
       }
     ]
   });
@@ -189,7 +238,7 @@ async function main() {
         id: "audit_seed_database",
         userId: admin.id,
         action: "Database seeded",
-        resource: "Phase 4 local demo",
+        resource: "Phase 5 local engineering demo",
         status: "Completed"
       },
       {

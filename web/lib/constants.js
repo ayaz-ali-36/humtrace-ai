@@ -1,5 +1,5 @@
 export const privacyNotice =
-  "HumTrace AI provides AI suggestions based on submitted information. It does not confirm identity. Human review and mutual consent are required before limited contact information can be shared.";
+  "Possible matches are suggestions, not confirmed identities. Contact details are shared only after the other reporter accepts your request.";
 
 export const demoSubmitMessage = "Demo form only. No delivery workflow has been added.";
 

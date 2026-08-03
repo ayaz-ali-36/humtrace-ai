@@ -17,6 +17,8 @@ model User {
   status             String           @default("ACTIVE")
   region             String?
   preferredContactMethod String        @default("EMAIL")
+  privacyPolicyVersion String?
+  privacyAcceptedAt   DateTime?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   reports            Report[]
@@ -26,6 +28,8 @@ model User {
   updatedSettings     SystemSetting[]
   sentRequests       ContactRequest[] @relation("ContactRequestRequester")
   receivedRequests   ContactRequest[] @relation("ContactRequestRecipient")
+  recommendationFeedback RecommendationFeedback[]
+  claimedReportClaims ReportClaim[]       @relation("ClaimedReportClaims")
 }
 
 model Session {
@@ -45,8 +49,8 @@ model Report {
   id                     String               @id @default(cuid())
   publicId               String               @unique
   type                   String
-  reporterId             String
-  reporter               User                 @relation(fields: [reporterId], references: [id])
+  reporterId             String?
+  reporter               User?                @relation(fields: [reporterId], references: [id], onDelete: SetNull)
   fullName               String?
   nameUnknown            Boolean              @default(false)
   approximateAge         String
@@ -75,6 +79,8 @@ model Report {
   aiProcessingPolicyVersion String?
   aiProcessingAllowedAt  DateTime?
   aiProcessingWithdrawnAt DateTime?
+  contentVersion         Int                  @default(1)
+  aiProcessingStatus     String               @default("DISABLED")
   photoRequirementNote   String?
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
@@ -87,12 +93,37 @@ model Report {
   notifications          Notification[]
   auditLogs              AuditLog[]
   textEmbeddings         ReportTextEmbedding[]
+  faceEmbeddings         ReportFaceEmbedding[]
   aiProcessingJobs       AIProcessingJob[]
+  suppressedAsSource     SuppressedPair[]       @relation("SuppressedPairSource")
+  suppressedAsTarget     SuppressedPair[]       @relation("SuppressedPairTarget")
+  claim                  ReportClaim?
 
   @@index([type])
   @@index([status])
   @@index([visibility])
   @@index([broadRegion])
+}
+
+model ReportClaim {
+  id                     String   @id @default(cuid())
+  reportId               String   @unique
+  report                 Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  tokenHash              String   @unique
+  submitterName          String
+  submitterEmail         String
+  submitterPhone         String?
+  preferredContactMethod String   @default("EMAIL")
+  failedAttempts         Int      @default(0)
+  lockedUntil            DateTime?
+  claimedById            String?
+  claimedBy              User?    @relation("ClaimedReportClaims", fields: [claimedById], references: [id], onDelete: SetNull)
+  claimedAt              DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([submitterEmail])
+  @@index([claimedById])
 }
 
 model ReportPhoto {
@@ -106,7 +137,11 @@ model ReportPhoto {
   fileSizeBytes     Int?
   reviewStatus      String            @default("PENDING")
   faceCheckStatus   String            @default("NOT_RUN")
+  contentHash       String?
+  replacedAt        DateTime?
+  deletedAt         DateTime?
   createdAt         DateTime          @default(now())
+  faceEmbeddings    ReportFaceEmbedding[]
 
   @@index([reportId])
 }
@@ -123,12 +158,17 @@ model Recommendation {
   breakdownSummary   String
   status             String               @default("PENDING_REVIEW")
   textModelVersion   String?
+  faceModelVersion   String?
   scoringVersion     String?
+  modalityScoresJson String?
+  modalityMask       String?
+  availableWeight    Float?
   expiresAt          DateTime?
   invalidatedAt      DateTime?
   invalidationReason String?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
+  feedback           RecommendationFeedback[]
 
   @@unique([sourceReportId, targetReportId])
   @@index([status])
@@ -219,9 +259,13 @@ model AIModel {
   language       String
   dimensions     Int
   status         String                @default("DEVELOPMENT_ONLY")
+  preprocessingVersion String?
+  purpose        String?
+  evaluationStatus String              @default("PENDING")
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   embeddings     ReportTextEmbedding[]
+  faceEmbeddings ReportFaceEmbedding[]
   jobs           AIProcessingJob[]
 
   @@index([capability])
@@ -239,10 +283,39 @@ model ReportTextEmbedding {
   authTag       Bytes
   dimensions    Int
   inputHash     String
+  keyId         String    @default("local-v1")
+  inputVersion  Int       @default(1)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   expiresAt     DateTime?
   invalidatedAt DateTime?
+  deletedAt     DateTime?
+
+  @@unique([reportId, modelId])
+  @@index([modelId])
+  @@index([expiresAt])
+}
+
+model ReportFaceEmbedding {
+  id            String    @id @default(cuid())
+  reportId      String
+  report        Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportPhotoId String
+  reportPhoto   ReportPhoto @relation(fields: [reportPhotoId], references: [id], onDelete: Cascade)
+  modelId       String
+  model         AIModel   @relation(fields: [modelId], references: [id])
+  ciphertext    Bytes
+  iv            Bytes
+  authTag       Bytes
+  keyId         String    @default("local-v1")
+  dimensions    Int
+  inputHash     String
+  inputVersion  Int       @default(1)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  expiresAt     DateTime?
+  invalidatedAt DateTime?
+  deletedAt     DateTime?
 
   @@unique([reportId, modelId])
   @@index([modelId])
@@ -253,12 +326,18 @@ model AIProcessingJob {
   id            String    @id @default(cuid())
   reportId      String
   report        Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  modelId       String
-  model         AIModel   @relation(fields: [modelId], references: [id])
+  modelId       String?
+  model         AIModel?  @relation(fields: [modelId], references: [id])
   jobType       String
   status        String    @default("PENDING")
+  idempotencyKey String   @unique
   attempts      Int       @default(0)
+  maxAttempts   Int       @default(3)
   safeErrorCode String?
+  availableAt   DateTime  @default(now())
+  retryAt       DateTime?
+  leaseOwner    String?
+  leaseExpiresAt DateTime?
   startedAt     DateTime?
   completedAt   DateTime?
   createdAt     DateTime  @default(now())
@@ -267,4 +346,64 @@ model AIProcessingJob {
   @@index([reportId])
   @@index([modelId])
   @@index([status])
+  @@index([availableAt])
+}
+
+model RecommendationFeedback {
+  id               String   @id @default(cuid())
+  recommendationId String
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action           String
+  reason           String
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  @@index([recommendationId])
+  @@index([userId])
+}
+
+model SuppressedPair {
+  id             String   @id @default(cuid())
+  sourceReportId String
+  sourceReport   Report   @relation("SuppressedPairSource", fields: [sourceReportId], references: [id], onDelete: Cascade)
+  targetReportId String
+  targetReport   Report   @relation("SuppressedPairTarget", fields: [targetReportId], references: [id], onDelete: Cascade)
+  scoringVersion String
+  reason         String
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime?
+
+  @@unique([sourceReportId, targetReportId, scoringVersion])
+  @@index([sourceReportId])
+}
+
+model RetentionEvent {
+  id           String    @id @default(cuid())
+  resourceType String
+  resourceId   String
+  action       String
+  outcome      String
+  scheduledAt  DateTime  @default(now())
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([resourceType])
+  @@index([scheduledAt])
+}
+
+model EvaluationRun {
+  id                   String    @id @default(cuid())
+  modelVersionsJson    String
+  datasetVersion       String
+  scoringVersion       String
+  metricsJson          String
+  limitationsJson      String
+  approvalStatus       String    @default("PENDING")
+  recommendedThreshold Int?
+  executedAt           DateTime  @default(now())
+  approvedAt           DateTime?
+
+  @@index([approvalStatus])
 }

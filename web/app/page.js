@@ -1,37 +1,49 @@
-"use client";
+import Link from "next/link";
+import {
+  Content,
+  DashboardCard,
+  HeroSection,
+  PublicShell,
+  ReportCard,
+  SectionHeader
+} from "@/components/ui/kit";
+import { getPublicReports } from "@/lib/public-reports";
 
-import { Content, DashboardCard, HeroSection, PrivacyNoticeCard, PublicShell, SectionHeader } from "@/components/ui/kit";
-import { FileText, Link2, Search, ShieldCheck } from "lucide-react";
+export const dynamic = "force-dynamic";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const result = await getPublicReports();
+  const recentReports = result.reports.slice(0, 3);
   const steps = [
-    ["Report Missing or Unidentified Person", "Submit a missing person or unidentified individual report with available details.", FileText],
-    ["Securely Store the Report", "Case details are stored with privacy-first access controls for reporter review.", ShieldCheck],
-    ["Deterministic Similarity Review", "Phase 4 compares available public report details to produce possible recommendations.", Search],
-    ["Possible Recommendations Help Review", "Human review and consent guide every next step.", Link2]
+    ["Submit a report", "Share the details you know and add a clear photograph."],
+    ["Review possible matches", "HumTrace compares reports and shows similarities worth checking."],
+    ["Request contact", "If something looks relevant, ask the other reporter to connect."]
   ];
+
   return (
     <PublicShell>
       <HeroSection />
       <Content>
-        <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          <DashboardCard title="Missing Cases" value="128" meta="Demo Data" />
-          <DashboardCard title="Unidentified Persons" value="42" meta="Demo Data" />
-          <DashboardCard title="Possible Recommendations" value="67" meta="Demo Data" />
-          <DashboardCard title="Cases Closed" value="15" meta="Demo Data" />
-        </section>
         <section>
-          <SectionHeader title="How It Works" description="A simple consent-led workflow for reporter review." />
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-            {steps.map(([title, text, Icon]) => <DashboardCard key={title} title={title} value="" meta={text} icon={Icon} />)}
+          <SectionHeader title="How it works" />
+          <div className="grid gap-5 md:grid-cols-3">
+            {steps.map(([title, text]) => (
+              <DashboardCard key={title} title={title} value="" meta={text} />
+            ))}
           </div>
         </section>
-        <section className="grid gap-5 lg:grid-cols-3">
-          <DashboardCard title="Privacy-first message" value="Consent" meta="Contact information remains hidden unless a contact request is accepted." />
-          <DashboardCard title="Platform value" value="Review" meta="AI suggestions support human judgment without confirming identity." />
-          <DashboardCard title="Academic scope" value="Phase 4" meta="Local database, auth, private uploads, deterministic recommendations, admin moderation, and consent workflows." />
-        </section>
-        <PrivacyNoticeCard />
+
+        {recentReports.length ? (
+          <section>
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <SectionHeader title="Recent public reports" description="Only limited public information is shown." />
+              <Link className="text-sm font-semibold text-accent" href="/browse">Browse all reports</Link>
+            </div>
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {recentReports.map((report) => <ReportCard key={report.id} report={report} />)}
+            </div>
+          </section>
+        ) : null}
       </Content>
     </PublicShell>
   );

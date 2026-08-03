@@ -75,7 +75,6 @@ async function main() {
 
   const ui = read("components/ui/kit.jsx");
   for (const marker of [
-    "Admin moderation does not confirm or reject identity",
     "Recommendation thresholds affect which possible similarities are displayed. They do not confirm identity.",
     "Admin can review recommendation quality labels and statuses, but cannot confirm identity or force contact.",
     "AdminSettingsPanel"

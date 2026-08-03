@@ -29,10 +29,19 @@ async function main() {
   }
 
   const reportApi = fs.readFileSync(path.join(root, "app", "api", "reports", "route.js"), "utf8");
-  for (const required of ["validateReportPayload", "deleteStoredReportPhoto", "heightCm", "identifyingFeatures", "lifecycleStatus"]) {
+  for (const required of ["validateReportPayload", "deleteStoredReportPhoto", "heightCm", "identifyingFeatures", "lifecycleStatus", "createClaimCode", "reportClaim.create"]) {
     if (!reportApi.includes(required)) {
       throw new Error(`Report API missing Phase 3 handling for ${required}.`);
     }
+  }
+
+  for (const required of ["model ReportClaim", "reporterId             String?", "tokenHash", "claimedAt"]) {
+    if (!schema.includes(required)) throw new Error(`Public report claiming schema is missing ${required}.`);
+  }
+
+  const claimApi = fs.readFileSync(path.join(root, "app", "api", "reports", "claim", "route.js"), "utf8");
+  for (const required of ["normalizeClaimCode", "submitterEmail", "failedAttempts", "claimedById"]) {
+    if (!claimApi.includes(required)) throw new Error(`Report claim API is missing ${required}.`);
   }
 
   const trackPage = fs.readFileSync(path.join(root, "app", "track", "page.js"), "utf8");

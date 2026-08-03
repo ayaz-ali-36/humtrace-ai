@@ -1,0 +1,24 @@
+{
+  "status": "DEVELOPMENT_ONLY_UNTIL_FINAL_EVALUATION",
+  "models": [
+    {
+      "id": "deepface-facenet",
+      "capability": "FACE_EMBEDDING",
+      "library": "deepface",
+      "modelName": "Facenet",
+      "dimensions": 128,
+      "artifactSha256": "90659cc97bfda5999120f95d8e122f4d262cca11715a21e59ba024bcce816d5c",
+      "licenseReview": "DeepFace wrapper is MIT; wrapped FaceNet weight provenance requires approval before normal release",
+      "purpose": "Possible similarity recommendations only",
+      "prohibitedUses": ["identity confirmation", "face generation", "age/gender/race/emotion inference"]
+    },
+    {
+      "id": "sentence-transformers-all-MiniLM-L6-v2",
+      "capability": "ENGLISH_TEXT_EMBEDDING",
+      "source": "sentence-transformers/all-MiniLM-L6-v2",
+      "dimensions": 384,
+      "license": "Apache-2.0",
+      "purpose": "English description similarity only"
+    }
+  ]
+}

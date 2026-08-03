@@ -5,6 +5,7 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const pendingPrefix = "pending-local-metadata/";
 const root = path.join(__dirname, "..");
+const privateStorageRoot = path.resolve(process.env.HUMTRACE_PRIVATE_STORAGE_ROOT || path.join(root, "storage", "reports"));
 
 async function main() {
   const apiSource = fs.readFileSync(path.join(root, "app", "api", "reports", "route.js"), "utf8");
@@ -41,8 +42,10 @@ async function main() {
 
   const storedUploads = photos.filter((photo) => photo.storagePath.startsWith("storage/reports/"));
   const missingFiles = storedUploads.filter((photo) => {
-    const normalized = photo.storagePath.split("/").join(path.sep);
-    return !fs.existsSync(path.join(root, normalized));
+    const relative = photo.storagePath.slice("storage/reports/".length).split("/").join(path.sep);
+    const absolute = path.resolve(privateStorageRoot, relative);
+    if (!absolute.startsWith(privateStorageRoot + path.sep)) return true;
+    return !fs.existsSync(absolute);
   });
 
   if (missingFiles.length) {
@@ -66,7 +69,7 @@ async function main() {
     }
   }
 
-  const uploadRoot = path.join(root, "storage", "reports");
+  const uploadRoot = privateStorageRoot;
   const uploadRootExists = fs.existsSync(uploadRoot);
   console.log(`Upload storage check passed: ${photos.length} photo records checked, ${storedUploads.length} stored files verified, ${legacyMetadataOnly} legacy metadata-only records. Upload root exists: ${uploadRootExists}.`);
 }

@@ -20,7 +20,7 @@ export async function POST(request) {
     }
     const created = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({ data: { name, email, passwordHash: await bcrypt.hash(password, 10), role: ROLES.ADMIN, status: USER_STATUS.ACTIVE } });
-      await tx.auditLog.create({ data: { userId: admin.id, action: "Admin staff created", resource: `users:${user.id}`, status: `Admin account created for ${email}` } });
+      await tx.auditLog.create({ data: { userId: admin.id, action: "Admin staff created", resource: `users:${user.id}`, status: "Admin account created" } });
       return user;
     });
     return NextResponse.json({ ok: true, staff: { id: created.id, name: created.name, email: created.email, status: created.status } }, { status: 201 });

@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+deepface
+tensorflow
+sentence-transformers
+scikit-learn
+numpy
+opencv-python

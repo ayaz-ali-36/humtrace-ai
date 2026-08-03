@@ -1,12 +1,20 @@
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 
 const baseUrl = process.env.HUMTRACE_BASE_URL || "http://localhost:3005";
+const faceFixture = process.env.HUMTRACE_TEST_FACE_FIXTURE ? path.resolve(process.env.HUMTRACE_TEST_FACE_FIXTURE) : "";
 
 function pngBytes() {
   return Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64");
 }
 
-async function multipartReport({ fileBytes = pngBytes(), fileName = "phase3-valid.png", contentType = "image/png", overrides = {} } = {}) {
+async function multipartReport({ cookie, fileBytes = null, fileName = "", contentType = "", overrides = {} } = {}) {
+  if (!fileBytes) {
+    fileBytes = faceFixture && fs.existsSync(faceFixture) ? fs.readFileSync(faceFixture) : pngBytes();
+    fileName = fileName || (faceFixture ? path.basename(faceFixture) : "phase3-valid.png");
+    contentType = contentType || (/\.jpe?g$/i.test(fileName) ? "image/jpeg" : "image/png");
+  }
   const boundary = `----HumTracePhase3${Date.now()}`;
   const fields = {
     type: "missing",
@@ -45,13 +53,78 @@ async function multipartReport({ fileBytes = pngBytes(), fileName = "phase3-vali
 
   const response = await fetch(`${baseUrl}/api/reports`, {
     method: "POST",
-    headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
+    headers: {
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      ...(cookie ? { Cookie: cookie } : {})
+    },
     body: Buffer.concat(chunks)
   });
   return { response, data: await response.json() };
 }
 
 async function main() {
+  const anonymousEmail = `public-claim-${Date.now()}@humtrace.demo`;
+  const anonymousSubmission = await multipartReport({
+    overrides: {
+      reporterName: "Public Workflow Submitter",
+      reporterEmail: anonymousEmail,
+      description: "Public no-account submission for secure claim workflow validation."
+    }
+  });
+  assert.equal(anonymousSubmission.response.status, 200, "public report submission should work without an account");
+  assert(/^MP-\d{4}-\d{4}$/.test(anonymousSubmission.data.caseId), "public submission should return a case ID");
+  assert(/^HTC-(?:[23456789A-HJ-NP-Z]{4}-){3}[23456789A-HJ-NP-Z]{4}$/.test(anonymousSubmission.data.claimCode), "public submission should return a strong one-time claim code");
+  assert.equal(anonymousSubmission.data.ownership, "AWAITING_CLAIM", "public submission should remain unowned until verified");
+
+  const anonymousPhotoBeforeClaim = await fetch(`${baseUrl}/api/reports/${anonymousSubmission.data.caseId}/photo`);
+  assert.equal(anonymousPhotoBeforeClaim.status, 401, "an unclaimed private photo should reject logged-out access");
+
+  const login = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "reporter@humtrace.demo", password: "ReporterDemo!2026" })
+  });
+  assert.equal(login.status, 200, "reporter login should work");
+  const cookie = login.headers.get("set-cookie")?.split(";")[0] || "";
+
+  const wrongAccountClaim = await fetch(`${baseUrl}/api/reports/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ caseId: anonymousSubmission.data.caseId, claimCode: anonymousSubmission.data.claimCode })
+  });
+  assert.equal(wrongAccountClaim.status, 400, "a claim should reject an account with a different email");
+  assert.match((await wrongAccountClaim.json()).error, /did not match/i, "claim mismatch should remain generic and actionable");
+
+  const register = await fetch(`${baseUrl}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Public Workflow Submitter", email: anonymousEmail, password: "PublicClaim!2026", privacyConsent: true, returnTo: `/reporter/claim-report?caseId=${anonymousSubmission.data.caseId}` })
+  });
+  assert.equal(register.status, 200, "the public submitter should be able to register after submission");
+  assert.match((await register.json()).redirectTo, /^\/login\?returnTo=/, "registration should preserve the report-claim destination");
+
+  const claimLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: anonymousEmail, password: "PublicClaim!2026" })
+  });
+  assert.equal(claimLogin.status, 200, "the newly registered submitter should sign in");
+  const claimCookie = claimLogin.headers.get("set-cookie")?.split(";")[0] || "";
+  const claim = await fetch(`${baseUrl}/api/reports/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: claimCookie },
+    body: JSON.stringify({ caseId: anonymousSubmission.data.caseId, claimCode: anonymousSubmission.data.claimCode })
+  });
+  assert.equal(claim.status, 200, "matching email and one-time code should claim the report");
+  const claimedPhoto = await fetch(`${baseUrl}/api/reports/${anonymousSubmission.data.caseId}/photo`, { headers: { Cookie: claimCookie } });
+  assert.equal(claimedPhoto.status, 200, "the verified report owner should access the private photo");
+  const repeatedClaim = await fetch(`${baseUrl}/api/reports/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: claimCookie },
+    body: JSON.stringify({ caseId: anonymousSubmission.data.caseId, claimCode: anonymousSubmission.data.claimCode })
+  });
+  assert.equal(repeatedClaim.status, 409, "a one-time claim must not transfer ownership twice");
+
   const unknownTrack = await fetch(`${baseUrl}/api/track/MP-2026-9999`);
   assert.equal(unknownTrack.status, 404, "unknown tracking code should return generic 404");
 
@@ -64,6 +137,7 @@ async function main() {
   }
 
   const invalidSignature = await multipartReport({
+    cookie,
     fileBytes: Buffer.from("not really a png"),
     fileName: "..\\bad.png",
     contentType: "image/png"
@@ -71,34 +145,41 @@ async function main() {
   assert.equal(invalidSignature.response.status, 400, "spoofed image signature should be rejected");
   assert.match(invalidSignature.data.error, /image signature/i, "spoofed image error should explain the image problem");
 
-  const futureDate = await multipartReport({ overrides: { date: "2999-01-01" } });
+  const futureDate = await multipartReport({ cookie, overrides: { date: "2999-01-01" } });
   assert.equal(futureDate.response.status, 400, "future dates should be rejected");
   assert.match(futureDate.data.error, /future|valid date/i, "future date error should explain the date problem");
 
-  const lowercaseGender = await multipartReport({ overrides: { gender: "male" } });
+  const lowercaseGender = await multipartReport({ cookie, overrides: { gender: "male" } });
   assert.equal(lowercaseGender.response.status, 200, "lowercase gender from old/direct submissions should be normalized");
 
-  const badRelationship = await multipartReport({ overrides: { relationship: "Brother" } });
+  const badRelationship = await multipartReport({ cookie, overrides: { relationship: "Brother" } });
   assert.equal(badRelationship.response.status, 400, "unsupported relationship should be rejected");
   assert.match(badRelationship.data.error, /relationship/i, "relationship error should name the relationship field");
 
-  const missingConsent = await multipartReport({ overrides: { consent: "false" } });
+  const missingConsent = await multipartReport({ cookie, overrides: { consent: "false" } });
   assert.equal(missingConsent.response.status, 400, "missing consent should be rejected");
   assert.match(missingConsent.data.error, /consent/i, "consent error should name the consent requirement");
 
-  const missingHeight = await multipartReport({ overrides: { heightFeet: "" } });
+  const missingHeight = await multipartReport({ cookie, overrides: { heightFeet: "" } });
   assert.equal(missingHeight.response.status, 400, "missing required height should be rejected");
   assert.match(missingHeight.data.error, /height/i, "height error should name the height field");
 
-  const missingWeight = await multipartReport({ overrides: { weightKg: "" } });
+  const missingWeight = await multipartReport({ cookie, overrides: { weightKg: "" } });
   assert.equal(missingWeight.response.status, 400, "missing required weight should be rejected");
   assert.match(missingWeight.data.error, /weight/i, "weight error should name the weight field");
 
-  const valid = await multipartReport();
+  const valid = await multipartReport({ cookie });
   assert.equal(valid.response.status, 200, "structured report submission should succeed");
   assert(/^MP-\d{4}-\d{4}$/.test(valid.data.caseId), "submission should return a tracking code");
 
+  const privatePhotoLoggedOut = await fetch(`${baseUrl}/api/reports/${valid.data.caseId}/photo`);
+  assert.equal(privatePhotoLoggedOut.status, 401, "private report photo should reject logged-out access");
+  const privatePhotoOwner = await fetch(`${baseUrl}/api/reports/${valid.data.caseId}/photo`, { headers: { Cookie: cookie } });
+  assert.equal(privatePhotoOwner.status, 200, "report owner should be able to review the private photo");
+  assert.equal(privatePhotoOwner.headers.get("cache-control"), "private, no-store, max-age=0", "private photo should never be cached");
+
   const unidentified = await multipartReport({
+    cookie,
     overrides: {
       type: "unidentified",
       name: "",

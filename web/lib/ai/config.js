@@ -12,11 +12,15 @@ export function englishTextEmbeddingActive(settings) {
 }
 
 export function aiServiceConfig() {
-  const url = process.env.HUMTRACE_AI_SERVICE_URL || "http://127.0.0.1:5055";
+  const rawUrl = process.env.HUMTRACE_AI_SERVICE_URL || "http://127.0.0.1:5055";
   const token = process.env.HUMTRACE_AI_INTERNAL_TOKEN || "";
-  if (!url.startsWith("http://127.0.0.1:") && !url.startsWith("http://localhost:")) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
     throw new Error("AI_SERVICE_NOT_LOOPBACK");
   }
+  if (parsed.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(parsed.hostname) || !parsed.port || parsed.username || parsed.password || !["", "/"].includes(parsed.pathname) || parsed.search || parsed.hash) throw new Error("AI_SERVICE_NOT_LOOPBACK");
   if (token.length < 32) throw new Error("AI_SERVICE_TOKEN_MISSING");
-  return { url: url.replace(/\/+$/, ""), token };
+  return { url: parsed.origin, token };
 }

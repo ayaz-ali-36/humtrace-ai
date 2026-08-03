@@ -9,7 +9,6 @@ humanTrace_AI/
 |   |-- models/                  Approved local artifacts only; not public
 |   `-- manifests/               Model identifiers, checksums, and restrictions
 |-- evaluation/                  Evaluation configs, scripts, reports; runtime ignored
-|-- stitch_reference/            Historical UI reference material
 |-- web/                         Next.js application and background workers
 |   |-- app/
 |   |   |-- api/                 Auth, reports, photos, search, contact, admin
@@ -34,11 +33,7 @@ humanTrace_AI/
 |   `-- workers/
 |       |-- ai-jobs.js           Single-concurrency leased background worker
 |       `-- retention.js         Derived-data expiry and deletion worker
-|-- PHASE_1_PROGRESS.md
-|-- PHASE_2_PROGRESS.md
-|-- PHASE_3_PROGRESS.md
-|-- PHASE_4_PROGRESS.md
-`-- web/PHASE_5_PROGRESS.md
+`-- README.md                    Project overview, setup, and safety boundaries
 ~~~
 
 ## Ownership boundaries

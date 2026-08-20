@@ -1,8 +1,8 @@
 # HumTrace AI Project Documentation
 
-Version: 1.2
+Version: 1.3
 Baseline: Phase 5 local engineering implemented; approximately 50-volunteer thesis pilot planned; normal activation evaluation pending
-Last updated: 2026-08-02
+Last updated: 2026-08-19
 
 This directory describes the current application and preserves relevant design history. The implemented Phase 5 scope is English all-MiniLM-L6-v2 text similarity plus DeepFace FaceNet face similarity through a root-level internal FastAPI service. The final evaluation is not approved, so normal user-visible model activation remains gated.
 
@@ -26,6 +26,7 @@ The implemented system does not generate, synthesize, edit, or enhance images. I
 8. [Frontend Wireframes](./08-FRONTEND-WIREFRAMES.md)
 9. [Evaluation Plan](./09-EVALUATION-PLAN.md)
 10. [Folder Structure](./10-FOLDER-STRUCTURE.md)
+11. [Approved UI Baseline](./11-APPROVED-UI-BASELINE.md)
 
 ## Non-negotiable safety rules
 

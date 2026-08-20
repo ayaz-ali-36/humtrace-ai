@@ -18,6 +18,10 @@ npm run dev
 
 See [`web/README.md`](./web/README.md) for configuration, demo accounts, AI-service commands, validation, privacy boundaries, and limitations. See [`web/docs/README.md`](./web/docs/README.md) for the complete project documentation.
 
+## Approved interface
+
+The current simple white-and-mint interface is the approved final UI baseline. Preserve it during future work and make only targeted fixes unless the project owner explicitly requests a redesign. The binding design notes are in [`web/docs/11-APPROVED-UI-BASELINE.md`](./web/docs/11-APPROVED-UI-BASELINE.md).
+
 ## Important limits
 
 - Similarity recommendations never confirm identity and always require human review.
